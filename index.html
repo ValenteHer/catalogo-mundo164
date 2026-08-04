@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mundo 1/64 — Catálogo</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #0c0c0d; min-height: 100vh; }
+  #root { min-height: 100vh; }
+</style>
+<script src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1",
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js",
+    "xlsx": "https://esm.sh/xlsx@0.18.5"
+  }
+}
+</script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-type="module" data-presets="react">
+
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { createRoot } from "react-dom/client";
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc } from "firebase/firestore";
+import * as XLSX from "xlsx";
+
+/* ============================================================
+   MUNDO 1/64 — Catálogo web (versión independiente, Firebase)
+   ============================================================ */
+
+const SEED_PRODUCTS = [{"id":"r97","code":"M001","diameter":"10.7mm","name":"BBS LM-R, small","logo":"TOYO tires","color":"mud","price":0.77,"qty":8,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Marrón"],"brandTag":"Toyo"},{"id":"r98","code":"M001","diameter":"10.7mm","name":"BBS LM-R, small","logo":"TOYO tires","color":"white","price":0.77,"qty":4,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Blanco"],"brandTag":"Toyo"},{"id":"r99","code":"M001","diameter":"10.7mm","name":"BBS LM-R, small","logo":"TOYO tires","color":"black","price":0.77,"qty":5,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Negro"],"brandTag":"Toyo"},{"id":"r100","code":"M001","diameter":"10.7mm","name":"BBS LM-R, small","logo":"TOYO tires","color":"orange","price":0.77,"qty":2,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Naranja"],"brandTag":"Toyo"},{"id":"r101","code":"M001","diameter":"10.7mm","name":"BBS LM-R, small","logo":"TOYO tires","color":"metal gray","price":0.99,"qty":5,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Gris"],"brandTag":"Toyo"},{"id":"r102","code":"M001","diameter":"10.7mm","name":"BBS LM-R, small","logo":"TOYO tires","color":"plated blue","price":0.99,"qty":1,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Azul"],"brandTag":"Toyo"},{"id":"r104","code":"M003","diameter":"10.7mm","name":"CE28 small","logo":"TOYO tires","color":"mud","price":0.77,"qty":6,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Marrón"],"brandTag":"Toyo"},{"id":"r105","code":"M003","diameter":"10.7mm","name":"CE28 small","logo":"TOYO tires","color":"white","price":0.77,"qty":1,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Blanco"],"brandTag":"Toyo"},{"id":"r106","code":"M003","diameter":"10.7mm","name":"CE28 small","logo":"TOYO tires","color":"orange","price":0.77,"qty":4,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Naranja"],"brandTag":"Toyo"},{"id":"r107","code":"M003","diameter":"10.7mm","name":"CE28 small","logo":"TOYO tires","color":"plated blue","price":0.99,"qty":2,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Azul"],"brandTag":"Toyo"},{"id":"r108","code":"M003","diameter":"10.7mm","name":"CE28 small","logo":"TOYO tires","color":"Copper","price":0.77,"qty":5,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Bronce"],"brandTag":"Toyo"},{"id":"r109","code":"M003","diameter":"10.7mm","name":"CE28 small","logo":"TOYO tires","color":"black","price":0.77,"qty":7,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Negro"],"brandTag":"Toyo"},{"id":"r110","code":"M007","diameter":"12.7mm","name":"work S1 Large","logo":"TOYO tires","color":"white","price":1.1,"qty":1,"category":"Ruedas M","sizeTag":"12.7mm","colorTags":["Blanco"],"brandTag":"Toyo"},{"id":"r114","code":"M007","diameter":"12.7mm","name":"work S1 Large","logo":"good year","color":"chrome","price":1.3,"qty":3,"category":"Ruedas M","sizeTag":"12.7mm","colorTags":["Cromado"],"brandTag":"Goodyear"},{"id":"r115","code":"M007","diameter":"12.7mm","name":"work S1 Large","logo":"good year","color":"black","price":1.1,"qty":3,"category":"Ruedas M","sizeTag":"12.7mm","colorTags":["Negro"],"brandTag":"Goodyear"},{"id":"r116","code":"M007","diameter":"12.7mm","name":"work S1 Large","logo":"good year","color":"bronze","price":1.1,"qty":3,"category":"Ruedas M","sizeTag":"12.7mm","colorTags":["Bronce"],"brandTag":"Goodyear"},{"id":"r117","code":"M007","diameter":"12.7mm","name":"work S1 Large","logo":"good year","color":"mud","price":1.1,"qty":3,"category":"Ruedas M","sizeTag":"12.7mm","colorTags":["Marrón"],"brandTag":"Goodyear"},{"id":"r133","code":"M012","diameter":"10.8mm","name":"6-spokes, Glued tires","logo":"NA","color":"green","price":0.34,"qty":2,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Verde"],"brandTag":null},{"id":"r134","code":"M012","diameter":"10.8mm","name":"6-spokes, Glued tires","logo":"NA","color":"gold","price":0.34,"qty":8,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Dorado"],"brandTag":null},{"id":"r135","code":"M012","diameter":"10.8mm","name":"6-spokes, Glued tires","logo":"NA","color":"white","price":0.34,"qty":5,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Blanco"],"brandTag":null},{"id":"r136","code":"M012","diameter":"10.8mm","name":"6-spokes, Glued tires","logo":"NA","color":"silver","price":0.34,"qty":10,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r137","code":"M012","diameter":"10.8mm","name":"6-spokes, Glued tires","logo":"NA","color":"gray","price":0.34,"qty":4,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Gris"],"brandTag":null},{"id":"r139","code":"M013","diameter":"11.2mm","name":"5-rays","logo":"NA","color":"Magic purple","price":0.46,"qty":5,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Morado"],"brandTag":null},{"id":"r140","code":"M013","diameter":"11.2mm","name":"5-rays","logo":"NA","color":"plated red","price":0.46,"qty":2,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Rojo"],"brandTag":null},{"id":"r142","code":"M014","diameter":"11.2mm","name":"pancake","logo":"NA","color":"Magic purple","price":0.46,"qty":3,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Morado"],"brandTag":null},{"id":"r143","code":"M014","diameter":"11.2mm","name":"pancake","logo":"NA","color":"metal gray","price":0.46,"qty":2,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Gris"],"brandTag":null},{"id":"r145","code":"M015","diameter":"11.2mm","name":"10-rays","logo":"NA","color":"silver","price":0.46,"qty":9,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Plateado"],"brandTag":null},{"id":"r146","code":"M015","diameter":"11.2mm","name":"10-rays","logo":"NA","color":"Magic purple","price":0.46,"qty":8,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Morado"],"brandTag":null},{"id":"r147","code":"M016","diameter":"10.8mm","name":"4-spokes, Glued tires","logo":"NA","color":"gold","price":0.36,"qty":3,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Dorado"],"brandTag":null},{"id":"r148","code":"M016","diameter":"10.8mm","name":"4-spokes, Glued tires","logo":"NA","color":"white","price":0.35,"qty":1,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Blanco"],"brandTag":null},{"id":"r150","code":"M016","diameter":"10.8mm","name":"4-spokes, Glued tires","logo":"NA","color":"black w gold ring","price":0.35,"qty":2,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Negro","Dorado"],"brandTag":null},{"id":"r151","code":"M016","diameter":"10.8mm","name":"4-spokes, Glued tires","logo":"NA","color":"black w silver ring","price":0.35,"qty":1,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Plateado","Negro"],"brandTag":null},{"id":"r152","code":"M016","diameter":"10.8mm","name":"4-spokes, Glued tires","logo":"NA","color":"yellow","price":0.36,"qty":1,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Amarillo"],"brandTag":null},{"id":"r154","code":"M016","diameter":"10.8mm","name":"4-spokes, Glued tires","logo":"NA","color":"chrome","price":0.46,"qty":4,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Cromado"],"brandTag":null},{"id":"r156","code":"M017","diameter":"10.8mm","name":"star, Glued tires","logo":"NA","color":"white","price":0.77,"qty":2,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Blanco"],"brandTag":null},{"id":"r157","code":"M017","diameter":"10.8mm","name":"star, Glued tires","logo":"NA","color":"silver","price":0.34,"qty":4,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r159","code":"M017","diameter":"10.8mm","name":"star, Glued tires","logo":"NA","color":"red","price":0.77,"qty":1,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Rojo"],"brandTag":null},{"id":"r160","code":"M017","diameter":"10.8mm","name":"star, Glued tires","logo":"NA","color":"yellow","price":0.77,"qty":3,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Amarillo"],"brandTag":null},{"id":"r162","code":"M018","diameter":"10.8mm","name":"TE37, Glued tires","logo":"NA","color":"white","price":0.34,"qty":1,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Blanco"],"brandTag":null},{"id":"r163","code":"M018","diameter":"10.8mm","name":"TE37, Glued tires","logo":"NA","color":"silver","price":0.34,"qty":2,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r164","code":"M018","diameter":"10.8mm","name":"TE37, Glued tires","logo":"NA","color":"black w red ring","price":0.34,"qty":3,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Negro","Rojo"],"brandTag":null},{"id":"r165","code":"M018","diameter":"10.8mm","name":"TE37, Glued tires","logo":"good year","color":"black","price":0.44,"qty":2,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Negro"],"brandTag":"Goodyear"},{"id":"r166","code":"M018","diameter":"10.8mm","name":"TE37, Glued tires","logo":"good year","color":"black w red ring","price":0.44,"qty":5,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Negro","Rojo"],"brandTag":"Goodyear"},{"id":"r167","code":"M019","diameter":"10.8mm","name":"7-spokes, Glued tires","logo":"NA","color":"gold","price":0.34,"qty":4,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Dorado"],"brandTag":null},{"id":"r169","code":"M019","diameter":"10.8mm","name":"7-spokes, Glued tires","logo":"NA","color":"red","price":0.77,"qty":4,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Rojo"],"brandTag":null},{"id":"r170","code":"M019","diameter":"10.8mm","name":"7-spokes, Glued tires","logo":"NA","color":"yellow","price":0.77,"qty":4,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Amarillo"],"brandTag":null},{"id":"r171","code":"M021","diameter":"10.8mm","name":"CE28, glued tires","logo":"NA","color":"white","price":0.36,"qty":4,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Blanco"],"brandTag":null},{"id":"r173","code":"M021","diameter":"10.8mm","name":"CE28, glued tires","logo":"NA","color":"gold w silver ring","price":0.52,"qty":1,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Plateado","Dorado"],"brandTag":null},{"id":"r177","code":"M022","diameter":"10.8mm","name":"Advan, glued tires","logo":"NA","color":"silver w gold edge","price":0.52,"qty":1,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Plateado","Dorado"],"brandTag":null},{"id":"r178","code":"M023","diameter":"10.8mm","name":"BBS, glued tires","logo":"NA","color":"black w red ring","price":0.36,"qty":6,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Negro","Rojo"],"brandTag":null},{"id":"r180","code":"M023","diameter":"10.8mm","name":"BBS, glued tires","logo":"NA","color":"silver w gold edge","price":0.52,"qty":1,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Plateado","Dorado"],"brandTag":null},{"id":"r181","code":"M025","diameter":"10.8mm","name":"6-rays, Glued tires","logo":"NA","color":"green","price":0.36,"qty":3,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Verde"],"brandTag":null},{"id":"r183","code":"M025","diameter":"10.8mm","name":"6-rays, Glued tires","logo":"NA","color":"blue","price":0.36,"qty":3,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Azul"],"brandTag":null},{"id":"r184","code":"M025","diameter":"10.8mm","name":"6-rays, Glued tires","logo":"NA","color":"yellow","price":0.36,"qty":4,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Amarillo"],"brandTag":null},{"id":"r187","code":"M033","diameter":"10.8mm","name":"BBS+ADVAN+CE28+4-rays wheels with removable tires","logo":"red lip","color":"4-rays chrome","price":0.902,"qty":1,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Cromado"],"brandTag":"Franja roja"},{"id":"r188","code":"M034","diameter":"14mm","name":"For truck with normal tire","logo":"white BFGoodrich","color":"TE37 silver","price":0.55,"qty":5,"category":"Ruedas M","sizeTag":"14mm","colorTags":["Plateado"],"brandTag":"BFGoodrich"},{"id":"r189","code":"M034","diameter":"14mm","name":"For truck with normal tire","logo":"white BFGoodrich","color":"TE37 black","price":0.55,"qty":7,"category":"Ruedas M","sizeTag":"14mm","colorTags":["Negro"],"brandTag":"BFGoodrich"},{"id":"r190","code":"M034","diameter":"14mm","name":"For truck with normal tire","logo":"white BFGoodrich","color":"5-slot silver","price":0.55,"qty":8,"category":"Ruedas M","sizeTag":"14mm","colorTags":["Plateado"],"brandTag":"BFGoodrich"},{"id":"r191","code":"M034","diameter":"14mm","name":"For truck with normal tire","logo":"white BFGoodrich","color":"5-slot black","price":1.55,"qty":8,"category":"Ruedas M","sizeTag":"14mm","colorTags":["Negro"],"brandTag":"BFGoodrich"},{"id":"r192","code":"M034","diameter":"14mm","name":"For truck with normal tire","logo":"white BFGoodrich","color":"TE37 black with red ring","price":0.55,"qty":6,"category":"Ruedas M","sizeTag":"14mm","colorTags":["Negro","Rojo"],"brandTag":"BFGoodrich"},{"id":"r193","code":"M034","diameter":"14mm","name":"For truck with normal tire","logo":"yellow BFGoodrich","color":"TE37 silver","price":0.616,"qty":1,"category":"Ruedas M","sizeTag":"14mm","colorTags":["Plateado"],"brandTag":"BFGoodrich"},{"id":"r201","code":"M037","diameter":"14mm","name":"pancake offroad, removable tires","logo":"NA","color":"chrome","price":0.506,"qty":1,"category":"Ruedas M","sizeTag":"14mm","colorTags":["Cromado"],"brandTag":null},{"id":"r202","code":"M038","diameter":"10.8+12.8mm","name":"4-rays ESCALADA","logo":"white lip","color":"4-rays chrome w white ring","price":1.0,"qty":2,"category":"Ruedas M","sizeTag":"10.8+12.7mm","colorTags":["Cromado","Blanco"],"brandTag":"Franja blanca"},{"id":"r204","code":"M038","diameter":"10.8+12.8mm","name":"4-rays ESCALADA","logo":"red lip","color":"4-rays chrome w red ring","price":1.0,"qty":1,"category":"Ruedas M","sizeTag":"10.8+12.7mm","colorTags":["Cromado","Rojo"],"brandTag":"Franja roja"},{"id":"r205","code":"M038","diameter":"10.8+12.8mm","name":"4-rays ESCALADA","logo":"red lip","color":"4-rays plated-gold w red ring","price":1.0,"qty":1,"category":"Ruedas M","sizeTag":"10.8+12.7mm","colorTags":["Dorado","Rojo"],"brandTag":"Franja roja"},{"id":"r206","code":"M039","diameter":"10.8+12.8mm","name":"ADVAN ESCALADA","logo":"white lip","color":"ADVAN chrome w white ring","price":1.0,"qty":1,"category":"Ruedas M","sizeTag":"10.8+12.7mm","colorTags":["Cromado","Blanco"],"brandTag":"Franja blanca"},{"id":"r208","code":"M039","diameter":"10.8+12.8mm","name":"ADVAN ESCALADA","logo":"red lip","color":"ADVAN chrome w red ring","price":1.0,"qty":3,"category":"Ruedas M","sizeTag":"10.8+12.7mm","colorTags":["Cromado","Rojo"],"brandTag":"Franja roja"},{"id":"r209","code":"M039","diameter":"10.8+12.8mm","name":"ADVAN ESCALADA","logo":"red lip","color":"ADVAN plated-gold w red ring","price":1.0,"qty":1,"category":"Ruedas M","sizeTag":"10.8+12.7mm","colorTags":["Dorado","Rojo"],"brandTag":"Franja roja"},{"id":"r212","code":"M041","diameter":"10.8+12.8mm","name":"BBS ESCALADA","logo":"white lip","color":"BBS chrome w white ring","price":1.0,"qty":1,"category":"Ruedas M","sizeTag":"10.8+12.7mm","colorTags":["Cromado","Blanco"],"brandTag":"Franja blanca"},{"id":"r213","code":"M041","diameter":"10.8+12.8mm","name":"BBS ESCALADA","logo":"red lip","color":"BBS chrome w red ring","price":1.0,"qty":1,"category":"Ruedas M","sizeTag":"10.8+12.7mm","colorTags":["Cromado","Rojo"],"brandTag":"Franja roja"},{"id":"r215","code":"M042","diameter":"10.8+12.8mm","name":"5-rays ESCALADA","logo":"DREAMCAR","color":"plated-gold","price":1.0,"qty":1,"category":"Ruedas M","sizeTag":"10.8+12.7mm","colorTags":["Dorado"],"brandTag":"Dreamcar"},{"id":"r218","code":"M044","diameter":"13mm","name":"mini dot gold","logo":"NA","color":"silver","price":0.19,"qty":14,"category":"Ruedas M","sizeTag":"13mm","colorTags":["Plateado"],"brandTag":null},{"id":"r219","code":"M045","diameter":"11mm","name":"Advad White","logo":"NA","color":"White","price":0.58,"qty":1,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Blanco"],"brandTag":null},{"id":"r220","code":"M046","diameter":"11mm","name":"Star White","logo":"NA","color":"White","price":0.58,"qty":1,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Blanco"],"brandTag":null},{"id":"r221","code":"M047","diameter":"11mm","name":"5 Blades White","logo":"NA","color":"White","price":0.58,"qty":1,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Blanco"],"brandTag":null},{"id":"r222","code":"M048","diameter":"11mm","name":"5 Blades Dark Grey","logo":"NA","color":"Dark Grey","price":0.58,"qty":1,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Gris"],"brandTag":null},{"id":"r223","code":"M049","diameter":"11mm","name":"5 Blades Grey","logo":"NA","color":"Grey","price":0.58,"qty":1,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Gris"],"brandTag":null},{"id":"r224","code":"M050","diameter":"11mm","name":"Flower White","logo":"NA","color":"White","price":0.58,"qty":2,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Blanco"],"brandTag":null},{"id":"r225","code":"M051","diameter":"11.2mm","name":"5-rays white w white ring","logo":"white lip","color":"White","price":0.58,"qty":4,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Blanco"],"brandTag":"Franja blanca"},{"id":"r227","code":"M053","diameter":"11mm","name":"pancake white with logo","logo":"DREAMCAR","color":"White","price":0.58,"qty":1,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Blanco"],"brandTag":"Dreamcar"},{"id":"r229","code":"M055","diameter":"11mm","name":"5-blades","logo":"NA","color":"Grey","price":0.65,"qty":1,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Gris"],"brandTag":null},{"id":"r230","code":"M056","diameter":"11mm","name":"10-spokes","logo":"NA","color":"Grey","price":0.65,"qty":2,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Gris"],"brandTag":null},{"id":"r232","code":"M058","diameter":"15mm","name":"5-rays EXTREME offroad","logo":"NA","color":"plated-blue","price":0.65,"qty":1,"category":"Ruedas M","sizeTag":"15mm","colorTags":["Azul"],"brandTag":null},{"id":"r238","code":"M064","diameter":"10.8mm","name":"mini dot gold","logo":"NA","color":"Gold","price":0.69,"qty":1,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Dorado"],"brandTag":null},{"id":"r239","code":"M065","diameter":"11.3mm","name":"Advan deep white","logo":"NA","color":"White","price":0.8,"qty":4,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Blanco"],"brandTag":null},{"id":"r240","code":"M066","diameter":"11.3mm","name":"BBS white","logo":"NA","color":"White","price":0.8,"qty":3,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Blanco"],"brandTag":null},{"id":"r241","code":"M067","diameter":"11.3mm","name":"10-rays white","logo":"NA","color":"White","price":0.8,"qty":3,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Blanco"],"brandTag":null},{"id":"r242","code":"M068","diameter":"11.3mm","name":"BBS green","logo":"TOYO tires","color":"Green","price":0.8,"qty":1,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Verde"],"brandTag":"Toyo"},{"id":"r243","code":"M069","diameter":"11.3mm","name":"10-rays green","logo":"TOYO tires","color":"Green","price":0.8,"qty":1,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Verde"],"brandTag":"Toyo"},{"id":"r244","code":"M070","diameter":"11.3mm","name":"bone shaker+gild","logo":"NA","color":"Gild","price":0.8,"qty":2,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Dorado"],"brandTag":null},{"id":"r245","code":"M071","diameter":"11.3mm","name":"bone shaker+silver","logo":"NA","color":"Silver","price":0.8,"qty":1,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Plateado"],"brandTag":null},{"id":"r246","code":"M072","diameter":"11.3mm","name":"bone shaker+dark gray","logo":"NA","color":"Dark Gray","price":0.8,"qty":1,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Gris"],"brandTag":null},{"id":"r247","code":"M073","diameter":"11.3mm","name":"bone shaker+white","logo":"NA","color":"White","price":0.8,"qty":4,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Blanco"],"brandTag":null},{"id":"r248","code":"M074","diameter":"10.8mm","name":"red ring - 5rays","logo":"red lip","color":"black w red ring","price":0.8,"qty":2,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Negro","Rojo"],"brandTag":"Franja roja"},{"id":"r249","code":"M075","diameter":"11mm","name":"5-Claw Chrome Silver","logo":"good year","color":"chrome","price":0.91,"qty":1,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Cromado"],"brandTag":"Goodyear"},{"id":"r250","code":"M076","diameter":"11mm","name":"6-Claw Chrome Silver","logo":"good year","color":"chrome","price":0.91,"qty":1,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Cromado"],"brandTag":"Goodyear"},{"id":"r253","code":"M078","diameter":"11mm","name":"Y-Shaped Chrome Silver","logo":"good year","color":"chrome","price":0.91,"qty":1,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Cromado"],"brandTag":"Goodyear"},{"id":"r254","code":"M079","diameter":"11mm","name":"6-Claw Chrome Blue","logo":"good year","color":"plated-blue","price":0.91,"qty":2,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Azul"],"brandTag":"Goodyear"},{"id":"r255","code":"M080","diameter":"11mm","name":"Tree-Branch Chrome Blue","logo":"good year","color":"plated-blue","price":0.91,"qty":1,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Azul"],"brandTag":"Goodyear"},{"id":"r258","code":"M083","diameter":"10.8mm","name":"Small-Hole Chrome Gold Print","logo":"good year","color":"plated-gold","price":0.91,"qty":3,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Dorado"],"brandTag":"Goodyear"},{"id":"r259","code":"M084","diameter":"10.8mm","name":"Small-Hole Chrome Silver Print","logo":"good year","color":"chrome","price":0.91,"qty":3,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Cromado"],"brandTag":"Goodyear"},{"id":"r260","code":"M084","diameter":"10.8mm","name":"Small-Hole Chrome Silver Print","logo":"NA","color":"plated-purple","price":0.79,"qty":4,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Morado"],"brandTag":null},{"id":"r269","code":"M093","diameter":"11.3mm","name":"bone shaker+plated-gold","logo":"NA","color":"plated-gold","price":1.02,"qty":2,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Dorado"],"brandTag":null},{"id":"r270","code":"M094","diameter":"14.8mm","name":"5-rays EXTREME offroad","logo":"NA","color":"Dark Grey","price":1.02,"qty":4,"category":"Ruedas M","sizeTag":"15mm","colorTags":["Gris"],"brandTag":null},{"id":"r271","code":"M095","diameter":"11.2mm+13mm","name":"BBS ESCALADA","logo":"NA","color":"White","price":1.02,"qty":2,"category":"Ruedas M","sizeTag":"11.2+13mm","colorTags":["Blanco"],"brandTag":null},{"id":"r275","code":"M099","diameter":"14.28mm","name":"5-spokes EXTREME offroad","logo":"NA","color":"chrome","price":1.22,"qty":2,"category":"Ruedas M","sizeTag":"14.5mm","colorTags":["Cromado"],"brandTag":null},{"id":"r279","code":"M103","diameter":"14.5mm","name":"5-spokes plated-red","logo":"NA","color":"plated-red","price":1.22,"qty":1,"category":"Ruedas M","sizeTag":"14.5mm","colorTags":["Rojo"],"brandTag":null},{"id":"r280","code":"M104","diameter":"13.2mm+15.5mm","name":"bone shaker ESCALADA","logo":"NA","color":"White","price":1.22,"qty":1,"category":"Ruedas M","sizeTag":"13+15mm","colorTags":["Blanco"],"brandTag":null},{"id":"r281","code":"M105","diameter":"13.2mm+15.5mm","name":"bone shaker ESCALADA","logo":"NA","color":"Dark Grey","price":1.22,"qty":1,"category":"Ruedas M","sizeTag":"13+15mm","colorTags":["Gris"],"brandTag":null},{"id":"r285","code":"M109","diameter":"11.7mm+12.9mm","name":"turtle ESCALADA","logo":"NA","color":"chrome","price":1.21,"qty":2,"category":"Ruedas M","sizeTag":"11.2+13mm","colorTags":["Cromado"],"brandTag":null},{"id":"r286","code":"M110","diameter":"10.9mm","name":"JDM","logo":"NA","color":"Orange","price":1.6,"qty":2,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":["Naranja"],"brandTag":null},{"id":"r287","code":"M111","diameter":"11.4mm","name":"TE37","logo":"NA","color":"Turquesa Blue","price":1.6,"qty":4,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Azul","Turquesa"],"brandTag":null},{"id":"r288","code":"M112","diameter":"11.4mm","name":"TE37","logo":"NA","color":"Verde Manzana","price":1.6,"qty":4,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Verde manzana"],"brandTag":null},{"id":"r289","code":"M113","diameter":"11.4mm","name":"TE37","logo":"NA","color":"Orange","price":1.6,"qty":1,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Naranja"],"brandTag":null},{"id":"r291","code":"M115","diameter":"11.4mm","name":"TE37","logo":"NA","color":"red","price":1.6,"qty":3,"category":"Ruedas M","sizeTag":"11.2mm","colorTags":["Rojo"],"brandTag":null},{"id":"r292","code":"M116","diameter":"11mm","name":"Multi-Hole","logo":"NA","color":"chrome","price":1.6,"qty":2,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Cromado"],"brandTag":null},{"id":"r293","code":"M117","diameter":"11mm","name":"Multi-Hole","logo":"NA","color":"plated-gold","price":1.6,"qty":2,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Dorado"],"brandTag":null},{"id":"r294","code":"M118","diameter":"11mm","name":"Printed Multi-Hole Silver","logo":"good year","color":"chrome","price":2.7,"qty":4,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Cromado"],"brandTag":"Goodyear"},{"id":"r295","code":"M119","diameter":"11mm","name":"Printed Multi-Hole Gold","logo":"good year","color":"plated-gold","price":2.7,"qty":1,"category":"Ruedas M","sizeTag":"11mm","colorTags":["Dorado"],"brandTag":"Goodyear"},{"id":"r296","code":"M120","diameter":"10.8mm","name":"Race-Drift tire","logo":"good year","color":"NA","price":0.33,"qty":15,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":[],"brandTag":"Goodyear"},{"id":"r297","code":"M121","diameter":"12.7mm","name":"Race-Drift tire","logo":"good year","color":"NA","price":0.33,"qty":1,"category":"Ruedas M","sizeTag":"12.7mm","colorTags":[],"brandTag":"Goodyear"},{"id":"r298","code":"M122","diameter":"10.8mm","name":"Textured tire","logo":"good year","color":"NA","price":0.33,"qty":10,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":[],"brandTag":"Goodyear"},{"id":"r299","code":"M123","diameter":"10.8mm","name":"Race-Drift tire","logo":"TOYO tires","color":"NA","price":0.33,"qty":43,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":[],"brandTag":"Toyo"},{"id":"r300","code":"M124","diameter":"12.7mm","name":"Race-Drift tire","logo":"TOYO tires","color":"NA","price":0.33,"qty":27,"category":"Ruedas M","sizeTag":"12.7mm","colorTags":[],"brandTag":"Toyo"},{"id":"r301","code":"M125","diameter":"10.8mm","name":"Textured tire","logo":"white lip","color":"NA","price":0.36,"qty":9,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":[],"brandTag":"Franja blanca"},{"id":"r302","code":"M126","diameter":"12.7mm","name":"Textured tire","logo":"white lip","color":"NA","price":0.36,"qty":5,"category":"Ruedas M","sizeTag":"12.7mm","colorTags":[],"brandTag":"Franja blanca"},{"id":"r303","code":"M127","diameter":"10.8mm","name":"Textured tire","logo":"red lip","color":"NA","price":0.36,"qty":18,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":[],"brandTag":"Franja roja"},{"id":"r304","code":"M128","diameter":"12.7mm","name":"Textured tire","logo":"red lip","color":"NA","price":0.36,"qty":5,"category":"Ruedas M","sizeTag":"12.7mm","colorTags":[],"brandTag":"Franja roja"},{"id":"r305","code":"M129","diameter":"10.8mm","name":"Textured tire","logo":"Bridgestone","color":"NA","price":0.36,"qty":17,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":[],"brandTag":"Bridgestone"},{"id":"r306","code":"M130","diameter":"10.8mm","name":"Race-Drift tire","logo":"Advan Yokohama","color":"NA","price":0.36,"qty":24,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":[],"brandTag":"Advan"},{"id":"r307","code":"M131","diameter":"10.8mm","name":"Race-Drift tire","logo":"Pirelli","color":"NA","price":0.36,"qty":5,"category":"Ruedas M","sizeTag":"10.8mm","colorTags":[],"brandTag":"Pirelli"},{"id":"r308","code":"MonoRace","diameter":"11.2mm","name":"Random","logo":"Random","color":"NA","price":3.74,"qty":11,"category":"Mono","sizeTag":"11.2mm","colorTags":[],"brandTag":null},{"id":"r309","code":"MonoTruck","diameter":"14mm","name":"Random","logo":"Random","color":"NA","price":4.49,"qty":8,"category":"Mono","sizeTag":"14mm","colorTags":[],"brandTag":null},{"id":"r311","code":"01 Short Disc","diameter":"9mm","name":"Random","logo":"Brake Discs wheels","color":"NA","price":1.16,"qty":12,"category":"Numerados","sizeTag":"9mm","colorTags":[],"brandTag":"Discos de freno"},{"id":"r312","code":"02 ESCALADAS ABS-BSS","diameter":"10.75mm/12.45mm","name":"Red Edge","logo":"red lip","color":"NA","price":1.0,"qty":4,"category":"Numerados","sizeTag":"10.8+12.7mm","colorTags":[],"brandTag":"Franja roja"},{"id":"r313","code":"03 ABS-SSS","diameter":"10.75mm","name":"Red Edge","logo":"red lip","color":"NA","price":1.0,"qty":4,"category":"Numerados","sizeTag":"10.8mm","colorTags":[],"brandTag":"Franja roja"},{"id":"r314","code":"04 R0DISC","diameter":"11.20mm/13mm GOODYEAR Chrome plating","name":"Random","logo":"good year","color":"NA","price":2.35,"qty":5,"category":"Numerados","sizeTag":"11.2+13mm","colorTags":[],"brandTag":"Goodyear"},{"id":"r315","code":"05 Chrome Multicolor","diameter":"11.20mm Chrome plating","name":"Random","logo":"good year","color":"NA","price":1.82,"qty":11,"category":"Numerados","sizeTag":"11.2mm","colorTags":[],"brandTag":"Goodyear"},{"id":"r316","code":"06 ESCALADAS 5-rays","diameter":"11.20mm/13mm","name":"Random","logo":"good year","color":"Chrome","price":1.12,"qty":2,"category":"Numerados","sizeTag":"11.2+13mm","colorTags":["Cromado"],"brandTag":"Goodyear"},{"id":"r317","code":"7 ESCALADAS 5-rays","diameter":"11.20mm/13mm","name":"Random","logo":"good year","color":"gold","price":1.12,"qty":1,"category":"Numerados","sizeTag":"11.2+13mm","colorTags":["Dorado"],"brandTag":"Goodyear"},{"id":"r318","code":"8 ESCALADAS 5-rays","diameter":"11.20mm/13mm","name":"Random","logo":"good year","color":"Black","price":1.12,"qty":1,"category":"Numerados","sizeTag":"11.2+13mm","colorTags":["Negro"],"brandTag":"Goodyear"},{"id":"r322","code":"12 ESCALADAS 5-rays classic","diameter":"10.80mm/12.80mm GOODYEAR Chrome plating","name":"Random","logo":"good year","color":"chrome","price":1.09,"qty":5,"category":"Numerados","sizeTag":"10.8+12.7mm","colorTags":["Cromado"],"brandTag":"Goodyear"},{"id":"r325","code":"15 Star","diameter":"10.80mm Goodyear Chrome plating","name":"Random","logo":"good year","color":"chrome","price":0.91,"qty":2,"category":"Numerados","sizeTag":"10.8mm","colorTags":["Cromado"],"brandTag":"Goodyear"},{"id":"r327","code":"17 Mini dots patter","diameter":"10.80mm Goodyear Chrome plating","name":"Random","logo":"good year","color":"plated-red","price":0.91,"qty":3,"category":"Numerados","sizeTag":"10.8mm","colorTags":["Rojo"],"brandTag":"Goodyear"},{"id":"r328","code":"18 Mini dots patter","diameter":"10.80mm Goodyear Chrome plating","name":"Random","logo":"good year","color":"plated-blue","price":0.91,"qty":3,"category":"Numerados","sizeTag":"10.8mm","colorTags":["Azul"],"brandTag":"Goodyear"},{"id":"r329","code":"19 Mini dots patter","diameter":"10.80mm","name":"Random","logo":"NA","color":"Silver","price":0.52,"qty":2,"category":"Numerados","sizeTag":"10.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r330","code":"20 Acanaladas w gold silver edge","diameter":"10.80mm","name":"Random","logo":"NA","color":"NA","price":0.84,"qty":2,"category":"Numerados","sizeTag":"10.8mm","colorTags":[],"brandTag":null},{"id":"r331","code":"21 Acanaladas w silver gold edge","diameter":"10.80mm","name":"Random","logo":"NA","color":"NA","price":0.84,"qty":2,"category":"Numerados","sizeTag":"10.8mm","colorTags":[],"brandTag":null},{"id":"r332","code":"22 10-rays","diameter":"10.80mm Chrome plating","name":"Random","logo":"NA","color":"chrome","price":0.84,"qty":5,"category":"Numerados","sizeTag":"10.8mm","colorTags":["Cromado"],"brandTag":null},{"id":"r333","code":"23 Acanaladas","diameter":"10.80mm Chrome plating","name":"Random","logo":"NA","color":"chrome","price":0.84,"qty":2,"category":"Numerados","sizeTag":"10.8mm","colorTags":["Cromado"],"brandTag":null},{"id":"r334","code":"23 Gulf Variadas","diameter":"10.80mm","name":"Random","logo":"NA","color":"Gulf","price":0.91,"qty":1,"category":"Numerados","sizeTag":"10.8mm","colorTags":["Gulf"],"brandTag":null},{"id":"r335","code":"Flower","diameter":"11.20mm Goodyear Chrome plating","name":"Random","logo":"good year","color":"plated-purple","price":0.96,"qty":4,"category":"Numerados","sizeTag":"11.2mm","colorTags":["Morado"],"brandTag":"Goodyear"},{"id":"r336","code":"24 Turtle rim","diameter":"11.80mm Chrome plating","name":"Random","logo":"NA","color":"NA","price":0.84,"qty":11,"category":"Numerados","sizeTag":"11.2mm","colorTags":[],"brandTag":null},{"id":"r337","code":"25 Off Road","diameter":"17mm Goodyear","name":"Random","logo":"good year","color":"NA","price":1.16,"qty":1,"category":"Numerados","sizeTag":"17mm","colorTags":[],"brandTag":"Goodyear"},{"id":"r338","code":"26 Extreme Off Road","diameter":"14.6mm Chrome plating","name":"Random","logo":"NA","color":"chrome","price":0.95,"qty":1,"category":"Numerados","sizeTag":"14.5mm","colorTags":["Cromado"],"brandTag":null},{"id":"r340","code":"28 Extreme Off Road","diameter":"14.6mm Chrome plating","name":"Random","logo":"NA","color":"plated-blue","price":0.95,"qty":2,"category":"Numerados","sizeTag":"14.5mm","colorTags":["Azul"],"brandTag":null},{"id":"r342","code":"30 Extreme Off Road","diameter":"14.6mm","name":"Random","logo":"NA","color":"yellow","price":0.82,"qty":2,"category":"Numerados","sizeTag":"14.5mm","colorTags":["Amarillo"],"brandTag":null},{"id":"r343","code":"31 Extreme Off Road","diameter":"14.6mm","name":"Random","logo":"NA","color":"gold","price":0.82,"qty":2,"category":"Numerados","sizeTag":"14.5mm","colorTags":["Dorado"],"brandTag":null},{"id":"r344","code":"32 Extreme Off Road","diameter":"14.6mm","name":"Random","logo":"NA","color":"silver","price":0.82,"qty":3,"category":"Numerados","sizeTag":"14.5mm","colorTags":["Plateado"],"brandTag":null},{"id":"r345","code":"33 Extreme Off Road","diameter":"14.6mm","name":"Random","logo":"NA","color":"Black","price":0.82,"qty":3,"category":"Numerados","sizeTag":"14.5mm","colorTags":["Negro"],"brandTag":null},{"id":"r348","code":"Tire Off road","diameter":"14.10mm","name":"Random","logo":"good year","color":"Black","price":0.4,"qty":14,"category":"Otros","sizeTag":"14mm","colorTags":["Negro"],"brandTag":"Goodyear"},{"id":"r349","code":"Tire Textured white letters","diameter":"10.8mm","name":"Random","logo":"good year","color":"Black","price":0.4,"qty":8,"category":"Otros","sizeTag":"10.8mm","colorTags":["Negro"],"brandTag":"Goodyear"},{"id":"r350","code":"Tire Textured Yellow letters","diameter":"10.8mm","name":"Random","logo":"good year","color":"Black","price":0.4,"qty":10,"category":"Otros","sizeTag":"10.8mm","colorTags":["Negro"],"brandTag":"Goodyear"},{"id":"r351","code":"EJES","diameter":"VARIOS","name":"EJES","logo":"NA","color":"NA","price":0.05,"qty":1201,"category":"Ejes","sizeTag":null,"colorTags":[],"brandTag":null},{"id":"r352","code":"BUFFER","diameter":"NA","name":"Exhaust Pipe","logo":"NA","color":"silveR","price":0.07,"qty":100,"category":"Escapes","sizeTag":null,"colorTags":["Plateado"],"brandTag":null},{"id":"r353","code":"TIRE12MM","diameter":"12mm","name":"rubber tires","logo":"NA","color":"black","price":0.22,"qty":10,"category":"Tire 12mm","sizeTag":"12.7mm","colorTags":["Negro"],"brandTag":null},{"id":"r354","code":"P0","diameter":"Diameter11mm, Width5.25mm","name":"no textured, flat tire","logo":"Bridgestone","color":"black","price":0.2,"qty":20,"category":"Ruedas P","sizeTag":"11+9mm","colorTags":["Negro"],"brandTag":"Bridgestone"},{"id":"r355","code":"P3","diameter":"10.7mm","name":"FUCHS small, tires are removable","logo":"good year","color":"bronze","price":0.77,"qty":3,"category":"Ruedas P","sizeTag":"10.8mm","colorTags":["Bronce"],"brandTag":"Goodyear"},{"id":"r356","code":"P4","diameter":"10.7mm","name":"FUCHS small, tires are removable","logo":"good year","color":"chrome","price":0.99,"qty":3,"category":"Ruedas P","sizeTag":"10.8mm","colorTags":["Cromado"],"brandTag":"Goodyear"},{"id":"r357","code":"P6","diameter":"10.7mm","name":"CE28 small, tires are removable","logo":"good year","color":"metal gray","price":0.99,"qty":2,"category":"Ruedas P","sizeTag":"10.8mm","colorTags":["Gris"],"brandTag":"Goodyear"},{"id":"r358","code":"P9","diameter":"10.8mm","name":"6-spokes, Glued tires","logo":"no","color":"black","price":0.34,"qty":2,"category":"Ruedas P","sizeTag":"10.8mm","colorTags":["Negro"],"brandTag":null},{"id":"r359","code":"P10","diameter":"11.2mm","name":"5-rays, tires are removable","logo":"no","color":"gold","price":0.46,"qty":4,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Dorado"],"brandTag":null},{"id":"r360","code":"P13","diameter":"11.2mm","name":"10-rays, tires are removable","logo":"no","color":"gold","price":0.46,"qty":4,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Dorado"],"brandTag":null},{"id":"r361","code":"P17","diameter":"10.8mm","name":"star, Glued tires","logo":"good year","color":"black","price":0.66,"qty":4,"category":"Ruedas P","sizeTag":"10.8mm","colorTags":["Negro"],"brandTag":"Goodyear"},{"id":"r362","code":"P18","diameter":"10.8mm","name":"star, Glued tires","logo":"good year","color":"Green","price":0.66,"qty":1,"category":"Ruedas P","sizeTag":"10.8mm","colorTags":["Verde"],"brandTag":"Goodyear"},{"id":"r363","code":"P20","diameter":"10.8mm","name":"TE37, Glued tires","logo":"good year","color":"Copper","price":0.44,"qty":2,"category":"Ruedas P","sizeTag":"10.8mm","colorTags":["Bronce"],"brandTag":"Goodyear"},{"id":"r364","code":"P22","diameter":"10.8mm","name":"7-spokes, Glued tires","logo":"good year","color":"black","price":0.44,"qty":6,"category":"Ruedas P","sizeTag":"10.8mm","colorTags":["Negro"],"brandTag":"Goodyear"},{"id":"r365","code":"P26","diameter":"10.8mm","name":"5-slot, glued tires","logo":"good year","color":"silver","price":0.44,"qty":4,"category":"Ruedas P","sizeTag":"10.8mm","colorTags":["Plateado"],"brandTag":"Goodyear"},{"id":"r366","code":"P32","diameter":"11.2mm","name":"5-rays with flat tires","logo":"No logo","color":"silver","price":0.77,"qty":3,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Plateado"],"brandTag":null},{"id":"r372","code":"P41","diameter":"11.2mm","name":"10-rays, tires are removable,flat tires","logo":"Pirelli","color":"chrome","price":0.52,"qty":7,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Cromado"],"brandTag":"Pirelli"},{"id":"r373","code":"P42","diameter":"11.2mm","name":"10-rays, tires are removable,flat tires","logo":"Pirelli","color":"regular silver","price":0.52,"qty":5,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Plateado"],"brandTag":"Pirelli"},{"id":"r374","code":"P43","diameter":"11.2mm","name":"10-rays, tires are removable,flat tires","logo":"Pirelli","color":"regular gold","price":0.52,"qty":3,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Dorado"],"brandTag":"Pirelli"},{"id":"r375","code":"P44","diameter":"11.2mm","name":"10-rays, tires are removable,flat tires","logo":"Pirelli","color":"plated-red","price":0.52,"qty":3,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Rojo"],"brandTag":"Pirelli"},{"id":"r376","code":"P45","diameter":"11.2mm","name":"10-rays, tires are removable,flat tires","logo":"Pirelli","color":"plated-blue","price":0.52,"qty":3,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Azul"],"brandTag":"Pirelli"},{"id":"r377","code":"P46","diameter":"11.2mm","name":"5-blades, tires are removable,flat tires","logo":"Pirelli","color":"magic purple","price":0.52,"qty":2,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Morado"],"brandTag":"Pirelli"},{"id":"r378","code":"P47","diameter":"11.2mm","name":"5-blades, tires are removable,flat tires","logo":"Pirelli","color":"chrome","price":0.52,"qty":4,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Cromado"],"brandTag":"Pirelli"},{"id":"r379","code":"P48","diameter":"11.2mm","name":"5-blades, tires are removable,flat tires","logo":"Pirelli","color":"regular silver","price":0.52,"qty":4,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Plateado"],"brandTag":"Pirelli"},{"id":"r380","code":"P49","diameter":"11.2mm","name":"5-blades, tires are removable,flat tires","logo":"Pirelli","color":"metal gray","price":0.52,"qty":1,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Gris"],"brandTag":"Pirelli"},{"id":"r381","code":"P50","diameter":"11.2mm","name":"5-blades, tires are removable,flat tires","logo":"Pirelli","color":"orange","price":0.59,"qty":2,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Naranja"],"brandTag":"Pirelli"},{"id":"r382","code":"P51","diameter":"11.2mm","name":"disc,tires are removable,flat tires","logo":"good year","color":"magic purple","price":0.52,"qty":4,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Morado"],"brandTag":"Goodyear"},{"id":"r383","code":"P52","diameter":"11.2mm","name":"disc,tires are removable,flat tires","logo":"good year","color":"chrome","price":0.52,"qty":5,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Cromado"],"brandTag":"Goodyear"},{"id":"r384","code":"P53","diameter":"11.2mm","name":"disc,tires are removable,flat tires","logo":"good year","color":"plated-blue","price":0.52,"qty":2,"category":"Ruedas P","sizeTag":"11.2mm","colorTags":["Azul"],"brandTag":"Goodyear"},{"id":"r385","code":"P54","diameter":"9.8mm","name":"5-rays, tires are removable","logo":"NA","color":"silver","price":0.46,"qty":4,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r386","code":"P55","diameter":"9.8mm","name":"5-rays, tires are removable","logo":"NA","color":"gold","price":0.46,"qty":2,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Dorado"],"brandTag":null},{"id":"r387","code":"P56","diameter":"9.8mm","name":"5-rays, tires are removable","logo":"NA","color":"Magic purple","price":0.46,"qty":2,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Morado"],"brandTag":null},{"id":"r388","code":"P57","diameter":"9.8mm","name":"5-rays, tires are removable","logo":"NA","color":"chrome","price":0.46,"qty":3,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Cromado"],"brandTag":null},{"id":"r389","code":"P58","diameter":"9.8mm","name":"TE37, tires are removable","logo":"NA","color":"white","price":0.36,"qty":2,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Blanco"],"brandTag":null},{"id":"r391","code":"P60","diameter":"9.8mm","name":"TE37, tires are removable","logo":"NA","color":"silver","price":0.46,"qty":2,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r392","code":"P61","diameter":"9.8mm","name":"TE37, tires are removable","logo":"NA","color":"gold","price":0.46,"qty":2,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Dorado"],"brandTag":null},{"id":"r393","code":"P62","diameter":"9.8mm","name":"TE37, tires are removable","logo":"NA","color":"Magic purple","price":0.46,"qty":1,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Morado"],"brandTag":null},{"id":"r394","code":"P63","diameter":"9.8mm","name":"TE37, tires are removable","logo":"NA","color":"chrome","price":0.46,"qty":2,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Cromado"],"brandTag":null},{"id":"r395","code":"P64","diameter":"9.8mm","name":"TE37, tires are removable","logo":"NA","color":"metal gray","price":0.46,"qty":2,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Gris"],"brandTag":null},{"id":"r396","code":"P65","diameter":"9.8mm","name":"4-rays, tires are removable","logo":"NA","color":"silver","price":0.46,"qty":3,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r398","code":"P67","diameter":"9.8mm","name":"4-rays, tires are removable","logo":"NA","color":"Magic purple","price":0.46,"qty":2,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Morado"],"brandTag":null},{"id":"r399","code":"P68","diameter":"9.8mm","name":"4-rays, tires are removable","logo":"NA","color":"chrome","price":0.46,"qty":8,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Cromado"],"brandTag":null},{"id":"r400","code":"P69","diameter":"9.8mm","name":"4-rays, tires are removable","logo":"NA","color":"metal gray","price":0.46,"qty":2,"category":"Ruedas P","sizeTag":"9.8mm","colorTags":["Gris"],"brandTag":null},{"id":"r401","code":"P70","diameter":"14.8mm","name":"5-rays EXTREME offroad","logo":"NA","color":"gold","price":1.02,"qty":3,"category":"Ruedas P","sizeTag":"15mm","colorTags":["Dorado"],"brandTag":null},{"id":"r402","code":"P71","diameter":"14.28mm","name":"5-spokes chrome","logo":"NA","color":"chrome","price":1.13,"qty":1,"category":"Ruedas P","sizeTag":"14.5mm","colorTags":["Cromado"],"brandTag":null},{"id":"r403","code":"P72","diameter":"11.7mm/12.9mm","name":"turtle silver","logo":"NA","color":"silver","price":1.13,"qty":3,"category":"Ruedas P","sizeTag":"11.2+13mm","colorTags":["Plateado"],"brandTag":null},{"id":"r404","code":"P73","diameter":"14.5mm","name":"5-spokes plated-red","logo":"NA","color":"red","price":1.13,"qty":2,"category":"Ruedas P","sizeTag":"14.5mm","colorTags":["Rojo"],"brandTag":null},{"id":"r405","code":"P74","diameter":"14.5mm","name":"5-spokes plated-green","logo":"NA","color":"Green","price":1.13,"qty":2,"category":"Ruedas P","sizeTag":"14.5mm","colorTags":["Verde"],"brandTag":null},{"id":"r406","code":"P75","diameter":"11.7mm/12.9mm","name":"turtle chrome","logo":"NA","color":"chrome","price":1.21,"qty":3,"category":"Ruedas P","sizeTag":"11.2+13mm","colorTags":["Cromado"],"brandTag":null},{"id":"r407","code":"Bearing","diameter":"11mm","name":"Bearing Wheels","logo":"NA","color":"Random","price":7.5,"qty":2,"category":"Bearing","sizeTag":"11mm","colorTags":[],"brandTag":null},{"id":"r408","code":"M132","diameter":"10.8mm","name":"SSC-GFN Serie","logo":"NA","color":"NA","price":1.3262,"qty":4,"category":"FansGuy","sizeTag":"10.8mm","colorTags":[],"brandTag":null},{"id":"r409","code":"M133","diameter":"10.80mm","name":"SSC-P Series for HW","logo":"NA","color":"Plated purple","price":1.2443,"qty":3,"category":"FansGuy","sizeTag":"10.8mm","colorTags":["Morado"],"brandTag":null},{"id":"r410","code":"M134","diameter":"14.6mm","name":"ORM Series (Off-Road)","logo":"NA","color":"NA","price":1.2347,"qty":6,"category":"FansGuy","sizeTag":"14.5mm","colorTags":[],"brandTag":null},{"id":"r411","code":"M135","diameter":"10.3mm","name":"No Axle - Black Rubber Tires","logo":"NA","color":"NA","price":0.6226,"qty":5,"category":"FansGuy","sizeTag":"10.3mm","colorTags":[],"brandTag":null},{"id":"r412","code":"M136","diameter":"9.5mm/10.80mm","name":"Bearing Series - Detachable Wheel Hub Cover","logo":"NA","color":"Random","price":5.4509,"qty":5,"category":"FansGuy","sizeTag":"9.8+10.8mm","colorTags":[],"brandTag":null},{"id":"r413","code":"M137","diameter":"9.7mm","name":"VSS-P Series","logo":"NA","color":"NA","price":1.2347,"qty":22,"category":"FansGuy","sizeTag":"9.8mm","colorTags":[],"brandTag":null},{"id":"r414","code":"M138","diameter":"11.2mm","name":"MMS-L/LP Series","logo":"NA","color":"NA","price":1.2391,"qty":8,"category":"FansGuy","sizeTag":"11.2mm","colorTags":[],"brandTag":null},{"id":"r415","code":"M139","diameter":"10.80mm","name":"SSC-GSN Series","logo":"NA","color":"NA","price":1.2679,"qty":10,"category":"FansGuy","sizeTag":"10.8mm","colorTags":[],"brandTag":null},{"id":"r416","code":"M140","diameter":"10.8mm","name":"SSC-SRN Series","logo":"NA","color":"NA","price":1.19,"qty":5,"category":"FansGuy","sizeTag":"10.8mm","colorTags":[],"brandTag":null},{"id":"r417","code":"M141","diameter":"10.8mm+12.8mm","name":"BSC-P Serie Staggered Front/Rear","logo":"NA","color":"Chrome","price":1.3879,"qty":20,"category":"FansGuy","sizeTag":"10.8+12.7mm","colorTags":["Cromado"],"brandTag":null},{"id":"r418","code":"M142","diameter":"10.8mm+12.8mm","name":"BSC-N Serie Staggered (for Hot Wheel)","logo":"NA","color":"NA","price":1.3077,"qty":11,"category":"FansGuy","sizeTag":"10.8+12.7mm","colorTags":[],"brandTag":null},{"id":"r419","code":"Bearing-2","diameter":"9.8mm/10.8mm","name":"Bearing Wheels","logo":"NA","color":"Random","price":5.8154,"qty":23,"category":"Bearing","sizeTag":"9.8+10.8mm","colorTags":[],"brandTag":null},{"id":"r420","code":"RC017","diameter":"10.8mm","name":"star, Glued tires","logo":"good year","color":"silver","price":0.462,"qty":14,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Plateado"],"brandTag":"Goodyear"},{"id":"r421","code":"RC023","diameter":"10.8mm","name":"BBS, glued tires","logo":"no logo","color":"silver","price":0.378,"qty":10,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r422","code":"RC024","diameter":"10.8mm","name":"5-rays, Glued tires","logo":"no logo","color":"black w red ring","price":0.378,"qty":4,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Negro","Rojo"],"brandTag":null},{"id":"r423","code":"RC024","diameter":"10.8mm","name":"5-rays, Glued tires","logo":"no logo","color":"silver","price":0.378,"qty":4,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r424","code":"RC025","diameter":"10.8mm","name":"6-rays, Glued tires","logo":"no logo","color":"black w red ring","price":0.378,"qty":4,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Negro","Rojo"],"brandTag":null},{"id":"r425","code":"RC025","diameter":"10.8mm","name":"6-rays, Glued tires","logo":"no logo","color":"silver","price":0.378,"qty":4,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r426","code":"RC029","diameter":"10.8mm","name":"Y, glued tires","logo":"no logo","color":"black","price":0.378,"qty":5,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Negro"],"brandTag":null},{"id":"r427","code":"RC029","diameter":"10.8mm","name":"Y, glued tires","logo":"no logo","color":"black w red ring","price":0.378,"qty":3,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Negro","Rojo"],"brandTag":null},{"id":"r428","code":"RC044","diameter":"10.8+12.8mm","name":"star","logo":"No logo","color":"black with white dot","price":0.8316,"qty":4,"category":"Ruedas RC","sizeTag":"10.8+12.7mm","colorTags":["Negro","Blanco"],"brandTag":null},{"id":"r429","code":"RC046","diameter":"11.2mm+13mm","name":"5-rays","logo":"No","color":"5-rays black","price":0.378,"qty":8,"category":"Ruedas RC","sizeTag":"11.2+13mm","colorTags":["Negro"],"brandTag":null},{"id":"r430","code":"RC046","diameter":"11.2mm+13mm","name":"5-rays","logo":"No","color":"5-rays chrome","price":0.4935,"qty":7,"category":"Ruedas RC","sizeTag":"11.2+13mm","colorTags":["Cromado"],"brandTag":null},{"id":"r431","code":"RC049","diameter":"10.8mm","name":"5-rays with textured tires","logo":"No logo","color":"chrome","price":0.8316,"qty":5,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Cromado"],"brandTag":null},{"id":"r432","code":"RC049","diameter":"10.8mm","name":"5-rays with textured tires","logo":"No logo","color":"plated-pink","price":0.8316,"qty":2,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Rosado"],"brandTag":null},{"id":"r433","code":"RC049","diameter":"10.8mm","name":"5-rays with textured tires","logo":"No logo","color":"plated-purple","price":0.8316,"qty":2,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Morado"],"brandTag":null},{"id":"r434","code":"RC051","diameter":"10.8mm","name":"star with textured tires","logo":"No logo","color":"silver","price":0.6825,"qty":3,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r435","code":"M133","diameter":"10.80mm","name":"SSC-P Series for HW","logo":"NA","color":"Chrome","price":0.9557,"qty":10,"category":"FansGuy","sizeTag":"10.8mm","colorTags":["Cromado"],"brandTag":null},{"id":"r436","code":"M141","diameter":"10.8mm+12.8mm","name":"BSC-P Serie Staggered Front/Rear","logo":"NA","color":"Black","price":1.2408,"qty":6,"category":"FansGuy","sizeTag":"10.8+12.7mm","colorTags":["Negro"],"brandTag":null},{"id":"r437","code":"RC001","diameter":"10.7mm","name":"BBS LM-R, small, tires are removable","logo":"No logo","color":"N/A","price":0.693,"qty":3,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":[],"brandTag":null},{"id":"r438","code":"RC003","diameter":"10.7mm","name":"CE28 small, tires are removable","logo":"good year","color":"chrome","price":1.0395,"qty":5,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Cromado"],"brandTag":"Goodyear"},{"id":"r439","code":"RC013","diameter":"11.2mm","name":"5-rays, tires are removable","logo":"no logo, flat tires","color":"black","price":0.378,"qty":8,"category":"Ruedas RC","sizeTag":"11.2mm","colorTags":["Negro"],"brandTag":null},{"id":"r440","code":"RC013","diameter":"11.2mm","name":"5-rays, tires are removable","logo":"no logo, flat tires","color":"silver","price":0.483,"qty":5,"category":"Ruedas RC","sizeTag":"11.2mm","colorTags":["Plateado"],"brandTag":null},{"id":"r441","code":"RC013","diameter":"11.2mm","name":"5-rays, tires are removable","logo":"no logo, flat tires","color":"chrome","price":0.483,"qty":8,"category":"Ruedas RC","sizeTag":"11.2mm","colorTags":["Cromado"],"brandTag":null},{"id":"r442","code":"RC013","diameter":"11.2mm","name":"5-rays, tires are removable","logo":"no logo, flat tires","color":"metal gray","price":0.483,"qty":4,"category":"Ruedas RC","sizeTag":"11.2mm","colorTags":["Gris"],"brandTag":null},{"id":"r443","code":"RC017-B","diameter":"10.8mm","name":"star B,glued tires","logo":"good year","color":"white","price":0.462,"qty":3,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Blanco"],"brandTag":"Goodyear"},{"id":"r444","code":"RC017-B","diameter":"10.8mm","name":"star B,glued tires","logo":"good year","color":"black","price":0.462,"qty":5,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Negro"],"brandTag":"Goodyear"},{"id":"r445","code":"RC019","diameter":"10.8mm","name":"7-spokes, Glued tires","logo":"no logo","color":"silver","price":0.357,"qty":4,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r446","code":"RC028","diameter":"10.8mm","name":"star, glued tires","logo":"no logo","color":"black","price":0.378,"qty":4,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Negro"],"brandTag":null},{"id":"r447","code":"RC031","diameter":"14mm","name":"holes offroad, glued tires","logo":"no logo","color":"silver","price":0.483,"qty":6,"category":"Ruedas RC","sizeTag":"14mm","colorTags":["Plateado"],"brandTag":null},{"id":"r448","code":"RC031","diameter":"14mm","name":"holes offroad, glued tires","logo":"no logo","color":"gold","price":0.483,"qty":5,"category":"Ruedas RC","sizeTag":"14mm","colorTags":["Dorado"],"brandTag":null},{"id":"r449","code":"RC032","diameter":"14mm","name":"5-slots offroad, glued tires","logo":"no logo","color":"gold","price":0.483,"qty":4,"category":"Ruedas RC","sizeTag":"14mm","colorTags":["Dorado"],"brandTag":null},{"id":"r450","code":"RC047","diameter":"10.8mm","name":"new advan with textured tires","logo":"No logo","color":"silver","price":0.6825,"qty":4,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Plateado"],"brandTag":null},{"id":"r451","code":"RC048","diameter":"10.8mm","name":"mini dots with textured tires","logo":"No logo","color":"plated-purple","price":0.8316,"qty":4,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Morado"],"brandTag":null},{"id":"r452","code":"RC048","diameter":"10.8mm","name":"mini dots with textured tires","logo":"No logo","color":"plated-pink","price":0.8316,"qty":4,"category":"Ruedas RC","sizeTag":"10.8mm","colorTags":["Rosado"],"brandTag":null},{"id":"r453","code":"RC061","diameter":"11.2mm","name":"holes with flat tires","logo":"No logo","color":"dark gray","price":0.8085,"qty":4,"category":"Ruedas RC","sizeTag":"11.2mm","colorTags":["Gris"],"brandTag":null},{"id":"r454","code":"RC061","diameter":"11.2mm","name":"holes with flat tires","logo":"No logo","color":"silver","price":0.8085,"qty":4,"category":"Ruedas RC","sizeTag":"11.2mm","colorTags":["Plateado"],"brandTag":null},{"id":"r455","code":"RC062","diameter":"11.2mm","name":"5-rays, tires are removable","logo":"good year, Flat tires","color":"black","price":0.4935,"qty":6,"category":"Ruedas RC","sizeTag":"11.2mm","colorTags":["Negro"],"brandTag":"Goodyear"},{"id":"r456","code":"RC062","diameter":"11.2mm","name":"5-rays, tires are removable","logo":"ADVAN, flat tires","color":"black","price":0.4935,"qty":3,"category":"Ruedas RC","sizeTag":"11.2mm","colorTags":["Negro"],"brandTag":"Advan"},{"id":"r457","code":"RC062","diameter":"11.2mm","name":"5-rays, tires are removable","logo":"ADVAN, flat tires","color":"silver","price":0.546,"qty":8,"category":"Ruedas RC","sizeTag":"11.2mm","colorTags":["Plateado"],"brandTag":"Advan"},{"id":"r458","code":"RC062","diameter":"11.2mm","name":"5-rays, tires are removable","logo":"ADVAN, flat tires","color":"metal gray","price":0.546,"qty":5,"category":"Ruedas RC","sizeTag":"11.2mm","colorTags":["Gris"],"brandTag":"Advan"},{"id":"r459","code":"RC072","diameter":"11.2mm","name":"5-blades, tires are removable,flat tires","logo":"good year","color":"black petal with silver edge","price":0.6195,"qty":4,"category":"Ruedas RC","sizeTag":"11.2mm","colorTags":["Plateado","Negro"],"brandTag":"Goodyear"},{"id":"r460","code":"RC076","diameter":"9.8mm","name":"5-blades, tires are removable","logo":"flat tires,no logo","color":"orange","price":0.483,"qty":2,"category":"Ruedas RC","sizeTag":"9.8mm","colorTags":["Naranja"],"brandTag":null},{"id":"r461","code":"RC076","diameter":"9.8mm","name":"5-blades, tires are removable","logo":"flat tires,no logo","color":"chrome","price":0.483,"qty":3,"category":"Ruedas RC","sizeTag":"9.8mm","colorTags":["Cromado"],"brandTag":null}];
+const SEED_CLIENTES = ["Abelardo Vicuña","Abraham Abongobas","Adrian","Alberto Paz","Alejandro Mendoza","Alex","Alex Margarita","Alirio José","Andres C","Andres Chacon","Angel Esclavo de Stella","Angel Mingghetti","Angel Montilla","Antonio Caracas","Argen Reyes","Armando","CLIENTE ANTIGUO","Carlos Alfredo","Carlos E","Carlos Garcia Cabimas","Christian Daniel","Christian Gabriel","Christofer Maracaibo","Crisman","Daniel Gonzalez","Daniel Salas","Danniel","Darnel","David Lopez","David Maracaibo","Deivys","Doctor Alvio","Doctor Jose Elias","Eduardo Cintron","Eduardo Diaz Merida","Eduardo Figuras","Elderes","Enrique Herrera","Eric","Fabian Camacho","Fernando","Fidel LED","Fortun","Francisco","Francisco Cordoba","Franklin","Freddy","Gabriel","Gabriel Abreu","Gabriel Marketplace","Gabriel Requena","García Anthony","Gustavo Maracaibo","Hector Badel","Hector Cedeño","Henry Loaiza","Hugo M","Humberto Sabino","Italo","JS Juan Sebastian","Javier B","Javier Lunnys","Jean","Jesus Lopez Valencia","Joel niño Maracaibo","Jorge Arape","Jose Abraham","Jose Carlos","Jose D","Jose Diaz","Jose Luis Espinoza","Jose Mussa","Jose Pino","Jose Zapata","Josmer","Juan Alvarez","Juan Andres Maya","Juan Miguel","Kelvin Agraez","Lony","Luis E","Luis Galactico","Luis Monagas Punta de Mata","Manuel Cárdenas","Manuel Melendez","Marco Bravo","Marco Z","Mario Cuty","Martin Merida","Matias Varela Chiguara","Miguel Faverola","Miguel La Guaira","Miguel Molano","Miguel Osorio","Miguel Tovar","Moisés Bravo","Nestor Lopez","Octavio Maturín","Pablo Morles","Pablo Yanez","Pedro Clavel","Piero","Ricardo","Ricardo Morales","Robin Pérez","Romer","Samuel","Sebastian Valencia","Sergio","Tell","Victor Arodis","Victor David","Victor Reyes","Visarro","Whalter","Wiam","William Risso","YO"];
+
+const money = (n) => "$" + (Math.round(n * 100) / 100).toFixed(2);
+
+/* ---------------- Firebase (Firestore) data layer ---------------- */
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCvDyFjZC4bShJpkC5e7FvD8WBIe2d9pQk",
+  authDomain: "mundo-1-64.firebaseapp.com",
+  projectId: "mundo-1-64",
+  storageBucket: "mundo-1-64.firebasestorage.app",
+  messagingSenderId: "372723029693",
+  appId: "1:372723029693:web:7ff5eff674d2fe9b0909d4",
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+
+async function fbFetchCollection(name) {
+  const out = {};
+  try {
+    const snap = await getDocs(collection(db, name));
+    snap.forEach((d) => { out[d.id] = d.data(); });
+  } catch (e) { console.error("fetch collection error", name, e); }
+  return out;
+}
+async function fbFetchDoc(colName, id, fallback) {
+  try {
+    const snap = await getDoc(doc(db, colName, id));
+    return snap.exists() ? snap.data() : fallback;
+  } catch (e) { console.error("fetch doc error", colName, id, e); return fallback; }
+}
+async function fbSaveDoc(colName, id, data) {
+  try { await setDoc(doc(db, colName, id), data); }
+  catch (e) { console.error("save doc error", colName, id, e); }
+}
+async function fbDeleteDoc(colName, id) {
+  try { await deleteDoc(doc(db, colName, id)); }
+  catch (e) { console.error("delete doc error", colName, id, e); }
+}
+
+function resizeImage(file, maxDim = 900, quality = 0.72) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function downloadCSV(filename, rows) {
+  const esc = (v) => {
+    const s = v === null || v === undefined ? "" : String(v);
+    if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  };
+  const csv = rows.map((row) => row.map(esc).join(",")).join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function fmtDate(d) {
+  const dt = new Date(d);
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yy = dt.getFullYear();
+  return `${dd}/${mm}/${yy}`;
+}
+
+/* ---------------- Filter normalization helpers ---------------- */
+
+const COLOR_MAP = [
+  [/\bchrome\b/i, "Cromado"], [/\bsilver\b/i, "Plateado"], [/\bblack\b/i, "Negro"], [/\bwhite\b/i, "Blanco"],
+  [/\bgold\b/i, "Dorado"], [/\bgild\b/i, "Dorado"], [/\bgr[ae]y\b/i, "Gris"], [/\bpurple\b/i, "Morado"],
+  [/\bblue\b/i, "Azul"], [/\bred\b/i, "Rojo"], [/\bgreen\b/i, "Verde"], [/\byellow\b/i, "Amarillo"],
+  [/\borange\b/i, "Naranja"], [/\bbronze\b/i, "Bronce"], [/\bcopper\b/i, "Bronce"], [/\bpink\b/i, "Rosado"],
+  [/\bmud\b/i, "Marrón"], [/\bturquesa\b/i, "Turquesa"], [/\bgulf\b/i, "Gulf"], [/\bmanzana\b/i, "Verde manzana"],
+];
+function colorTagsOf(raw) {
+  if (!raw) return [];
+  const s = raw.trim();
+  if (["NA", "N/A", "RANDOM", "VARIOS", ""].includes(s.toUpperCase())) return [];
+  const tags = [];
+  for (const [pat, es] of COLOR_MAP) if (pat.test(s) && !tags.includes(es)) tags.push(es);
+  return tags;
+}
+const STANDARD_SIZES = [9, 9.8, 10, 10.3, 10.8, 11, 11.2, 12.7, 13, 14, 14.5, 15, 17];
+function roundToStandardSize(n) {
+  let best = STANDARD_SIZES[0], bestDiff = Math.abs(n - best);
+  for (const s of STANDARD_SIZES) {
+    const d = Math.abs(n - s);
+    if (d < bestDiff) { best = s; bestDiff = d; }
+  }
+  return best;
+}
+function sizeTagOf(raw) {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (["NA", "VARIOS", "N/A", ""].includes(s.toUpperCase())) return null;
+  if (!/mm/i.test(s)) return null;
+  const pieces = s.split(/[+/,]/);
+  const nums = [];
+  for (const p of pieces) {
+    const m = p.match(/(\d+\.?\d*)/);
+    if (m) nums.push(m[1]);
+  }
+  if (nums.length === 0) return null;
+  const fmt = (n) => { const f = roundToStandardSize(parseFloat(n)); return Number.isInteger(f) ? String(f) : String(Math.round(f * 100) / 100); };
+  const seen = [];
+  nums.forEach((n) => { const f = fmt(n); if (!seen.includes(f)) seen.push(f); });
+  return seen.join("+") + "mm";
+}
+function brandTagOf(raw) {
+  if (!raw) return null;
+  const low = raw.trim().toLowerCase();
+  if (["na", "n/a", "random", "", "no", "no logo"].includes(low) || low.includes("no logo")) return null;
+  if (low.includes("good year") || low.includes("goodyear")) return "Goodyear";
+  if (low.includes("toyo")) return "Toyo";
+  if (low.includes("pirelli")) return "Pirelli";
+  if (low.includes("bridgestone")) return "Bridgestone";
+  if (low.includes("advan")) return "Advan";
+  if (low.includes("bfgoodrich")) return "BFGoodrich";
+  if (low.includes("dreamcar")) return "Dreamcar";
+  if (low.includes("red lip")) return "Franja roja";
+  if (low.includes("white lip")) return "Franja blanca";
+  if (low.includes("brake disc")) return "Discos de freno";
+  return null;
+}
+
+const COLOR_SWATCH = {
+  "Cromado": "#c9cdd1", "Plateado": "#c0c0c0", "Negro": "#1a1a1a", "Blanco": "#f5f5f0", "Dorado": "#d4af37",
+  "Gris": "#888888", "Morado": "#8a4fc9", "Azul": "#3b6fd4", "Rojo": "#d43b3b", "Verde": "#4caf50",
+  "Amarillo": "#e6c332", "Naranja": "#e2823c", "Bronce": "#8c5a2b", "Rosado": "#e08fb0", "Marrón": "#6b4a2f",
+  "Turquesa": "#2fb8b0", "Gulf": "#e0632c", "Verde manzana": "#8bc34a",
+};
+
+/* ---------------- Icons (self-contained, no external icon library) ---------------- */
+
+const Icon = (paths, viewBox = "0 0 24 24") => ({ size = 18, color = "currentColor", style, ...rest }) => (
+  <svg width={size} height={size} viewBox={viewBox} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} {...rest}>
+    {paths}
+  </svg>
+);
+
+const ShoppingCart = Icon(<><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></>);
+const Search = Icon(<><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></>);
+const X = Icon(<><path d="M18 6L6 18"/><path d="M6 6l12 12"/></>);
+const Plus = Icon(<><path d="M12 5v14"/><path d="M5 12h14"/></>);
+const Minus = Icon(<path d="M5 12h14"/>);
+const Upload = Icon(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></>);
+const Trash2 = Icon(<><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>);
+const Check = Icon(<path d="M20 6L9 17l-5-5"/>);
+const Clock = Icon(<><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></>);
+const Settings = Icon(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>);
+const Package = Icon(<><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3.3 7.3L12 12l8.7-4.7"/><path d="M12 22V12"/></>);
+const ClipboardList = Icon(<><rect x="6" y="3" width="12" height="16" rx="2"/><path d="M9 3v2h6V3"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h3"/></>);
+const ChevronLeft = Icon(<path d="M15 18l-6-6 6-6"/>);
+const ChevronRight = Icon(<path d="M9 18l6-6-6-6"/>);
+const ChevronDown = Icon(<path d="M6 9l6 6 6-6"/>);
+const Lock = Icon(<><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></>);
+const Download = Icon(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></>);
+const LogOut = Icon(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></>);
+const FileSpreadsheet = Icon(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M8 13v4"/><path d="M12 13v4"/><path d="M16 13v4"/></>);
+
+/* ---------------- Brand shell / global styles ---------------- */
+
+function BrandStyles() {
+  return (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+      .m164 * { box-sizing: border-box; }
+      .m164 {
+        font-family: 'Inter', system-ui, sans-serif;
+        background: #0c0c0d;
+        color: #f3f1ec;
+        min-height: 100%;
+        width: 100%;
+      }
+      .m164 h1, .m164 h2, .m164 h3, .m164 .disp {
+        font-family: 'Oswald', 'Inter', sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      .m164 ::selection { background: #e2823c; color: #0c0c0d; }
+      .m164 button { font-family: inherit; cursor: pointer; }
+      .m164 input, .m164 select, .m164 textarea { font-family: inherit; }
+      .m164-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+      .m164-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 8px; }
+      .m164-scrollbar::-webkit-scrollbar-track { background: transparent; }
+      @keyframes m164fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+      .m164-in { animation: m164fade 0.25s ease both; }
+      .tread { background-image: repeating-linear-gradient(90deg, #e2823c 0 10px, transparent 10px 20px); height: 3px; opacity: 0.55; }
+    `}</style>
+  );
+}
+
+/* ---------------- Tire placeholder icon ---------------- */
+
+function TirePlaceholder({ size = 48 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" fill="none">
+      <circle cx="50" cy="50" r="46" stroke="#3a3a3d" strokeWidth="6" />
+      <circle cx="50" cy="50" r="46" stroke="#e2823c" strokeWidth="2" strokeDasharray="4 6" opacity="0.5" />
+      <circle cx="50" cy="50" r="20" stroke="#3a3a3d" strokeWidth="5" />
+      <circle cx="50" cy="50" r="4" fill="#3a3a3d" />
+      {[0, 60, 120, 180, 240, 300].map((deg) => (
+        <line
+          key={deg}
+          x1="50" y1="50"
+          x2={50 + 30 * Math.cos((deg * Math.PI) / 180)}
+          y2={50 + 30 * Math.sin((deg * Math.PI) / 180)}
+          stroke="#3a3a3d" strokeWidth="4"
+        />
+      ))}
+    </svg>
+  );
+}
+
+/* ---------------- Header ---------------- */
+
+function Header({ view, setView, cartCount, onOpenCart, isAdmin, logo }) {
+  return (
+    <div style={{
+      position: "sticky", top: 0, zIndex: 30,
+      background: "rgba(12,12,13,0.92)", backdropFilter: "blur(6px)",
+      borderBottom: "1px solid #232326",
+    }}>
+      <div style={{ height: 3 }} className="tread" />
+      <div style={{
+        maxWidth: 1100, margin: "0 auto", padding: "10px 16px",
+        display: "flex", alignItems: "center", gap: 12,
+      }}>
+        <div style={{
+          width: 42, height: 42, borderRadius: "50%", background: "#000",
+          border: "2px solid #e2823c", display: "flex", alignItems: "center",
+          justifyContent: "center", flexShrink: 0, overflow: "hidden",
+        }}>
+          {logo ? (
+            <img src={logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="9" stroke="#e2823c" strokeWidth="1.6" />
+              <circle cx="12" cy="12" r="9" stroke="#fff" strokeWidth="0.8" strokeDasharray="1.5 2.5" />
+              <circle cx="12" cy="12" r="3.2" fill="#fff" />
+            </svg>
+          )}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#e2823c", lineHeight: 1.05 }}>
+            Mundo 1/64
+          </div>
+          <div style={{ fontSize: 10.5, color: "#9a9994", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            Ruedas y miniaturas
+          </div>
+        </div>
+        {view === "client" && (
+          <button
+            onClick={onOpenCart}
+            style={{
+              position: "relative", background: "#1a1a1c", border: "1px solid #2c2c30",
+              color: "#f3f1ec", borderRadius: 10, padding: "9px 14px",
+              display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 600,
+            }}
+          >
+            <ShoppingCart size={17} />
+            Pedido
+            {cartCount > 0 && (
+              <span style={{
+                position: "absolute", top: -6, right: -6, background: "#e2823c", color: "#0c0c0d",
+                borderRadius: 999, fontSize: 11, fontWeight: 700, minWidth: 18, height: 18,
+                display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px",
+              }}>
+                {cartCount}
+              </span>
+            )}
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            onClick={() => setView(view === "admin" ? "client" : "admin")}
+            style={{
+              background: "transparent", border: "1px solid #2c2c30", color: "#9a9994",
+              borderRadius: 10, padding: "9px 12px", fontSize: 12.5, display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            {view === "admin" ? <><ShoppingCart size={14} /> Ver catálogo</> : <><Settings size={14} /> Admin</>}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Product Card ---------------- */
+
+function ProductCard({ product, photos, cartQty, onAdd, onRemove }) {
+  const [photoIdx, setPhotoIdx] = useState(0);
+  const hasPhotos = photos && photos.length > 0;
+  const tags = [product.diameter, product.color, product.logo].filter((t) => t && t.toUpperCase() !== "NA");
+
+  return (
+    <div className="m164-in" style={{
+      background: "#151516", border: "1px solid #232326", borderRadius: 14,
+      overflow: "hidden", display: "flex", flexDirection: "column",
+    }}>
+      <div style={{ position: "relative", aspectRatio: "1.2", background: "#0f0f10", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {hasPhotos ? (
+          <img src={photos[photoIdx]} alt={product.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        ) : (
+          <TirePlaceholder size={54} />
+        )}
+        {hasPhotos && photos.length > 1 && (
+          <>
+            <button onClick={() => setPhotoIdx((i) => (i - 1 + photos.length) % photos.length)}
+              style={{ position: "absolute", left: 4, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.55)", border: "none", borderRadius: 999, width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
+              <ChevronLeft size={14} />
+            </button>
+            <button onClick={() => setPhotoIdx((i) => (i + 1) % photos.length)}
+              style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.55)", border: "none", borderRadius: 999, width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
+              <ChevronRight size={14} />
+            </button>
+            <div style={{ position: "absolute", bottom: 6, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 3 }}>
+              {photos.map((_, i) => (
+                <div key={i} style={{ width: 5, height: 5, borderRadius: 999, background: i === photoIdx ? "#e2823c" : "rgba(255,255,255,0.35)" }} />
+              ))}
+            </div>
+          </>
+        )}
+        <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,0.6)", color: "#e2823c", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 6, letterSpacing: "0.03em" }}>
+          {product.code}
+        </div>
+      </div>
+      <div style={{ padding: "10px 12px 12px", display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.25, minHeight: 34 }}>{product.name || "Sin nombre"}</div>
+        {tags.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {tags.map((t, i) => (
+              <span key={i} style={{ fontSize: 10.5, color: "#b5b3ad", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 6, padding: "1.5px 6px" }}>{t}</span>
+            ))}
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto", paddingTop: 6 }}>
+          <div className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#e2823c" }}>{money(product.price)}</div>
+          {cartQty > 0 ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#1f1f22", borderRadius: 8, padding: "3px 6px" }}>
+              <button onClick={onRemove} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" }}><Minus size={13} /></button>
+              <span style={{ fontSize: 13, fontWeight: 700, minWidth: 16, textAlign: "center" }}>{cartQty}</span>
+              <button onClick={onAdd} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={13} /></button>
+            </div>
+          ) : (
+            <button onClick={onAdd} style={{ background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, fontSize: 12.5, borderRadius: 8, padding: "6px 12px", display: "flex", alignItems: "center", gap: 5 }}>
+              <Plus size={13} /> Agregar
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Cart Drawer ---------------- */
+
+function CartDrawer({ open, onClose, cart, products, onQty, onSend, whatsapp }) {
+  if (!open) return null;
+  const items = Object.entries(cart).map(([id, qty]) => ({ product: products.find((p) => p.id === id), qty })).filter((i) => i.product && i.qty > 0);
+  const total = items.reduce((s, i) => s + i.product.price * i.qty, 0);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", justifyContent: "flex-end" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)" }} />
+      <div className="m164-scrollbar" style={{
+        position: "relative", width: "min(420px, 100%)", background: "#141415", height: "100%",
+        display: "flex", flexDirection: "column", borderLeft: "1px solid #232326", overflowY: "auto",
+      }}>
+        <div style={{ padding: "16px 18px", borderBottom: "1px solid #232326", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div className="disp" style={{ fontSize: 16, fontWeight: 700 }}>Tu pedido</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#9a9994" }}><X size={20} /></button>
+        </div>
+        <div style={{ flex: 1, padding: "10px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+          {items.length === 0 && (
+            <div style={{ color: "#7a7974", fontSize: 13.5, textAlign: "center", padding: "30px 0" }}>
+              Todavía no agregaste productos.
+            </div>
+          )}
+          {items.map(({ product, qty }) => (
+            <div key={product.id} style={{ display: "flex", gap: 10, alignItems: "center", paddingBottom: 10, borderBottom: "1px solid #202023" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#e2823c" }}>{product.code}</div>
+                <div style={{ fontSize: 13, lineHeight: 1.25 }}>{product.name}</div>
+                <div style={{ fontSize: 11.5, color: "#8a8983" }}>{[product.diameter, product.color].filter(t=>t&&t.toUpperCase()!=="NA").join(" · ")}</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#1f1f22", borderRadius: 8, padding: "3px 6px" }}>
+                <button onClick={() => onQty(product.id, qty - 1)} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22 }}><Minus size={12} /></button>
+                <span style={{ fontSize: 13, fontWeight: 700, minWidth: 16, textAlign: "center" }}>{qty}</span>
+                <button onClick={() => onQty(product.id, qty + 1)} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22 }}><Plus size={12} /></button>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, minWidth: 54, textAlign: "right" }}>{money(product.price * qty)}</div>
+            </div>
+          ))}
+        </div>
+        {items.length > 0 && (
+          <div style={{ padding: "14px 18px 20px", borderTop: "1px solid #232326" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 15 }}>
+              <span style={{ color: "#9a9994" }}>Subtotal</span>
+              <span className="disp" style={{ fontWeight: 700, color: "#e2823c", fontSize: 18 }}>{money(total)}</span>
+            </div>
+            <button
+              onClick={() => onSend(items, total)}
+              style={{ width: "100%", background: "#25D366", border: "none", color: "#06210f", fontWeight: 700, fontSize: 14.5, borderRadius: 10, padding: "13px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+            >
+              Enviar pedido por WhatsApp
+            </button>
+            <div style={{ fontSize: 11, color: "#7a7974", marginTop: 8, textAlign: "center" }}>
+              Tu pedido queda pendiente de confirmación de pago.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Client Catalog View ---------------- */
+
+function FilterDropdown({ label, options, selected, onToggle, onRemove, swatches, openId, setOpenId }) {
+  const id = label;
+  const open = openId === id;
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpenId(null); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open, setOpenId]);
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div ref={boxRef} style={{ position: "relative" }}>
+          <button onClick={() => setOpenId(open ? null : id)}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
+              background: "#17171a", border: selected.length ? "1px solid #e2823c" : "1px solid #2a2a2e",
+              borderRadius: 8, padding: "8px 12px", color: selected.length ? "#e2823c" : "#9a9994", fontSize: 12.5, fontWeight: 600,
+            }}
+          >
+            {label}{selected.length > 0 ? ` (${selected.length})` : ""}
+            <ChevronDown size={14} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+          </button>
+          {open && (
+            <div className="m164-scrollbar" style={{
+              position: "absolute", top: "110%", left: 0, zIndex: 40, background: "#1a1a1c",
+              border: "1px solid #2c2c30", borderRadius: 10, padding: 8, minWidth: 200, maxHeight: 260,
+              overflowY: "auto", boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+            }}>
+              {options.length === 0 && <div style={{ fontSize: 12, color: "#7a7974", padding: 8 }}>Sin opciones</div>}
+              {options.map((opt) => {
+                const active = selected.includes(opt);
+                return (
+                  <label key={opt} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", borderRadius: 6, cursor: "pointer", fontSize: 12.5, color: active ? "#e2823c" : "#e9e7e1" }}>
+                    <input type="checkbox" checked={active} onChange={() => onToggle(opt)} style={{ accentColor: "#e2823c" }} />
+                    {swatches && <span style={{ width: 10, height: 10, borderRadius: "50%", background: swatches[opt] || "#666", border: "1px solid rgba(255,255,255,0.25)", flexShrink: 0 }} />}
+                    {opt}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {selected.map((opt) => (
+          <span key={opt} style={{
+            display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
+            background: "rgba(226,130,60,0.15)", border: "1px solid #e2823c", color: "#e2823c",
+            borderRadius: 999, padding: "5px 8px 5px 12px", fontSize: 12, fontWeight: 600,
+          }}>
+            {swatches && <span style={{ width: 9, height: 9, borderRadius: "50%", background: swatches[opt] || "#666", border: "1px solid rgba(255,255,255,0.4)" }} />}
+            {opt}
+            <button onClick={() => onRemove(opt)} style={{ background: "none", border: "none", color: "#e2823c", display: "flex", alignItems: "center", padding: 0 }}>
+              <X size={13} />
+            </button>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+
+}
+
+function ClientCatalog({ products, overrides, cart, setCart, whatsapp, onSubmitOrder, logo }) {
+  const [query, setQuery] = useState("");
+  const [sizes_sel, setSizesSel] = useState([]);
+  const [colors_sel, setColorsSel] = useState([]);
+  const [brands_sel, setBrandsSel] = useState([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [openFilter, setOpenFilter] = useState(null);
+
+  const toggleIn = (setter) => (val) => setter((arr) => arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val]);
+
+  const sizes = useMemo(() => {
+    const s = new Set(products.filter((p) => p.qty > 0).map((p) => p.sizeTag).filter(Boolean));
+    return Array.from(s).sort((a, b) => parseFloat(a) - parseFloat(b));
+  }, [products]);
+  const colors = useMemo(() => {
+    const s = new Set();
+    products.filter((p) => p.qty > 0).forEach((p) => (p.colorTags || []).forEach((t) => s.add(t)));
+    return Array.from(s).sort();
+  }, [products]);
+  const brands = useMemo(() => {
+    const s = new Set(products.filter((p) => p.qty > 0).map((p) => p.brandTag).filter(Boolean));
+    return Array.from(s).sort();
+  }, [products]);
+
+  const visible = useMemo(() => {
+    return products.filter((p) => {
+      if (sizes_sel.length > 0 && !sizes_sel.includes(p.sizeTag)) return false;
+      if (colors_sel.length > 0 && !(p.colorTags || []).some((t) => colors_sel.includes(t))) return false;
+      if (brands_sel.length > 0 && !brands_sel.includes(p.brandTag)) return false;
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      return [p.code, p.name, p.diameter, p.color, p.logo].some((f) => (f || "").toLowerCase().includes(q));
+    });
+  }, [products, query, sizes_sel, colors_sel, brands_sel]);
+
+  const cartCount = Object.values(cart).reduce((s, v) => s + v, 0);
+
+  const addOne = (id) => setCart((c) => ({ ...c, [id]: (c[id] || 0) + 1 }));
+  const removeOne = (id) => setCart((c) => {
+    const next = { ...c, [id]: Math.max(0, (c[id] || 0) - 1) };
+    if (next[id] === 0) delete next[id];
+    return next;
+  });
+  const setQty = (id, qty) => setCart((c) => {
+    const next = { ...c };
+    if (qty <= 0) delete next[id]; else next[id] = qty;
+    return next;
+  });
+
+  return (
+    <>
+      <Header view="client" cartCount={cartCount} onOpenCart={() => setCartOpen(true)} isAdmin={false} setView={() => {}} logo={logo} />
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px" }}>
+        <div style={{ position: "relative", marginBottom: 12 }}>
+          <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#7a7974" }} />
+          <input
+            value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar por código, nombre, color, medida..."
+            style={{ width: "100%", background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 10, padding: "10px 12px 10px 36px", color: "#f3f1ec", fontSize: 13.5 }}
+          />
+        </div>
+
+        <FilterDropdown label="Tamaño" options={sizes} selected={sizes_sel} onToggle={toggleIn(setSizesSel)} onRemove={toggleIn(setSizesSel)} openId={openFilter} setOpenId={setOpenFilter} />
+        <FilterDropdown label="Marca del caucho" options={brands} selected={brands_sel} onToggle={toggleIn(setBrandsSel)} onRemove={toggleIn(setBrandsSel)} openId={openFilter} setOpenId={setOpenFilter} />
+        <FilterDropdown label="Color" options={colors} selected={colors_sel} onToggle={toggleIn(setColorsSel)} onRemove={toggleIn(setColorsSel)} openId={openFilter} setOpenId={setOpenFilter} swatches={COLOR_SWATCH} />
+
+        {visible.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "60px 0", color: "#7a7974" }}>
+            No encontramos productos con esa búsqueda.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: 12 }}>
+            {visible.map((p) => (
+              <ProductCard
+                key={p.id} product={p} photos={(overrides[p.id] && overrides[p.id].photos) || []}
+                cartQty={cart[p.id] || 0} onAdd={() => addOne(p.id)} onRemove={() => removeOne(p.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+      <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} cart={cart} products={products} onQty={setQty} whatsapp={whatsapp}
+        onSend={(items, total) => { onSubmitOrder(items, total); setCartOpen(false); }} />
+    </>
+  );
+}
+
+/* ---------------- Admin: login gate ---------------- */
+
+function AdminGate({ pin, onSuccess, onCancel }) {
+  const [val, setVal] = useState("");
+  const [err, setErr] = useState(false);
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#141415", border: "1px solid #2a2a2e", borderRadius: 16, padding: 24, width: "min(320px,100%)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+          <Lock size={18} color="#e2823c" />
+          <div className="disp" style={{ fontSize: 15, fontWeight: 700 }}>Acceso administrador</div>
+        </div>
+        <input
+          type="password" value={val} autoFocus
+          onChange={(e) => { setVal(e.target.value); setErr(false); }}
+          onKeyDown={(e) => { if (e.key === "Enter") { if (val === pin) onSuccess(); else setErr(true); } }}
+          placeholder="PIN"
+          style={{ width: "100%", background: "#1f1f22", border: err ? "1px solid #d9534f" : "1px solid #2a2a2e", borderRadius: 8, padding: "10px 12px", color: "#f3f1ec", fontSize: 14, marginBottom: 10 }}
+        />
+        {err && <div style={{ color: "#e08585", fontSize: 12, marginBottom: 10 }}>PIN incorrecto.</div>}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onCancel} style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "9px", fontSize: 13 }}>Cancelar</button>
+          <button onClick={() => { if (val === pin) onSuccess(); else setErr(true); }} style={{ flex: 1, background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "9px", fontSize: 13 }}>Entrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Admin: Pedidos tab ---------------- */
+
+function AdminPedidos({ orders, setOrders, clientes, setClientes }) {
+  const [filter, setFilter] = useState("Todos");
+  const [newClienteFor, setNewClienteFor] = useState(null);
+  const [newClienteVal, setNewClienteVal] = useState("");
+
+  const filtered = orders.filter((o) => filter === "Todos" ? true : o.status === filter).sort((a,b)=>b.createdAt-a.createdAt);
+
+  const updateOrder = (id, patch) => {
+    setOrders((prev) => {
+      const next = prev.map((o) => o.id === id ? { ...o, ...patch } : o);
+      const updated = next.find((o) => o.id === id);
+      if (updated) fbSaveDoc("orders", id, updated);
+      return next;
+    });
+  };
+
+  const confirmClienteName = (orderId) => {
+    const name = newClienteVal.trim();
+    if (!name) return;
+    if (!clientes.includes(name)) {
+      const updated = [...clientes, name].sort();
+      setClientes(updated);
+      fbSaveDoc("meta", "clientes", { list: updated });
+    }
+    updateOrder(orderId, { cliente: name });
+    setNewClienteFor(null); setNewClienteVal("");
+  };
+
+  const exportPagados = () => {
+    const rows = [["Timestamp","Unidades","Nombre del cliente","Fecha de Pedido","Modelo","Tipo","Descuento","Comentario","Precio","ID Pedido"]];
+    orders.filter((o) => o.status === "Pagado").forEach((o) => {
+      o.items.forEach((it) => {
+        rows.push([
+          new Date(o.createdAt).toISOString(),
+          it.qty,
+          o.cliente || "",
+          fmtDate(o.createdAt),
+          `${it.code} ${it.diameter} ${it.name} ${it.logo} ${it.color}`.replace(/\s+/g," ").trim(),
+          "Venta",
+          o.discount || 0,
+          `Pedido Web ${o.id}`,
+          it.price,
+          o.id,
+        ]);
+      });
+    });
+    downloadCSV(`pedidos_confirmados_${Date.now()}.csv`, rows);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {["Todos","Pendiente","Pagado"].map((f) => (
+            <button key={f} onClick={() => setFilter(f)} style={{
+              padding: "6px 12px", borderRadius: 999, fontSize: 12.5, fontWeight: 600,
+              border: filter === f ? "1px solid #e2823c" : "1px solid #2a2a2e",
+              background: filter === f ? "rgba(226,130,60,0.15)" : "transparent",
+              color: filter === f ? "#e2823c" : "#9a9994",
+            }}>{f}</button>
+          ))}
+        </div>
+        <button onClick={exportPagados} style={{ display: "flex", alignItems: "center", gap: 6, background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600 }}>
+          <Download size={14} /> Exportar pagados (CSV)
+        </button>
+      </div>
+
+      {filtered.length === 0 && <div style={{ color: "#7a7974", textAlign: "center", padding: "40px 0" }}>No hay pedidos en esta vista.</div>}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {filtered.map((o) => (
+          <div key={o.id} style={{ background: "#151516", border: "1px solid #232326", borderRadius: 12, padding: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+              <div>
+                <div style={{ fontSize: 12, color: "#7a7974" }}>{fmtDate(o.createdAt)} · #{o.id}</div>
+                {o.cliente ? (
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{o.cliente}</div>
+                ) : newClienteFor === o.id ? (
+                  <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                    <input list="clientes-list" value={newClienteVal} onChange={(e) => setNewClienteVal(e.target.value)}
+                      placeholder="Nombre del cliente" style={{ background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 6, padding: "5px 8px", color: "#f3f1ec", fontSize: 12.5 }} />
+                    <button onClick={() => confirmClienteName(o.id)} style={{ background: "#e2823c", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 700 }}>OK</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setNewClienteFor(o.id)} style={{ fontSize: 12.5, color: "#e2823c", background: "none", border: "none", textDecoration: "underline" }}>Asignar cliente</button>
+                )}
+              </div>
+              <span style={{
+                alignSelf: "flex-start", fontSize: 11.5, fontWeight: 700, borderRadius: 999, padding: "3px 10px",
+                background: o.status === "Pagado" ? "rgba(63,174,106,0.15)" : "rgba(226,184,75,0.15)",
+                color: o.status === "Pagado" ? "#3fae6a" : "#e2b34b",
+                display: "flex", alignItems: "center", gap: 5,
+              }}>
+                {o.status === "Pagado" ? <Check size={12} /> : <Clock size={12} />} {o.status}
+              </span>
+            </div>
+            <div style={{ borderTop: "1px solid #202023", borderBottom: "1px solid #202023", padding: "8px 0", marginBottom: 8 }}>
+              {o.items.map((it, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "2px 0", color: "#c9c8c3" }}>
+                  <span>{it.qty}x {it.code} — {it.name} {it.color && it.color.toUpperCase() !== "NA" ? `(${it.color})` : ""}</span>
+                  <span>{money(it.price * it.qty)}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <label style={{ fontSize: 12, color: "#9a9994" }}>Descuento $</label>
+                <input type="number" min="0" step="0.01" value={o.discount || 0}
+                  onChange={(e) => updateOrder(o.id, { discount: parseFloat(e.target.value) || 0 })}
+                  style={{ width: 70, background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 6, padding: "5px 7px", color: "#f3f1ec", fontSize: 12.5 }} />
+              </div>
+              <div className="disp" style={{ fontSize: 15, fontWeight: 700, color: "#e2823c" }}>
+                Total: {money(Math.max(0, o.total - (o.discount || 0)))}
+              </div>
+              {o.status === "Pendiente" ? (
+                <button onClick={() => updateOrder(o.id, { status: "Pagado" })} style={{ background: "#3fae6a", border: "none", color: "#06210f", fontWeight: 700, fontSize: 12.5, borderRadius: 8, padding: "8px 14px", display: "flex", alignItems: "center", gap: 6 }}>
+                  <Check size={14} /> Confirmar pago
+                </button>
+              ) : (
+                <button onClick={() => updateOrder(o.id, { status: "Pendiente" })} style={{ background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", fontSize: 12.5, borderRadius: 8, padding: "8px 14px" }}>
+                  Marcar pendiente
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <datalist id="clientes-list">
+        {clientes.map((c) => <option key={c} value={c} />)}
+      </datalist>
+    </div>
+  );
+}
+
+/* ---------------- Admin: Productos tab ---------------- */
+
+function ProductPhotosModal({ product, photos, onClose, onSave }) {
+  const [list, setList] = useState(photos || []);
+  const fileRef = useRef(null);
+
+  const handleFiles = async (files) => {
+    const arr = Array.from(files).slice(0, 4 - list.length);
+    const resized = await Promise.all(arr.map((f) => resizeImage(f, 650, 0.6)));
+    setList((l) => [...l, ...resized]);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#141415", border: "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(480px,100%)", maxHeight: "85vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div className="disp" style={{ fontSize: 15, fontWeight: 700 }}>Fotos — {product.code}</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#9a9994" }}><X size={18} /></button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
+          {list.map((p, i) => (
+            <div key={i} style={{ position: "relative", aspectRatio: "1", borderRadius: 8, overflow: "hidden", background: "#0f0f10" }}>
+              <img src={p} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <button onClick={() => setList((l) => l.filter((_, j) => j !== i))}
+                style={{ position: "absolute", top: 3, right: 3, background: "rgba(0,0,0,0.7)", border: "none", borderRadius: 999, width: 20, height: 20, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+          {list.length < 4 && (
+            <button onClick={() => fileRef.current.click()} style={{ aspectRatio: "1", borderRadius: 8, border: "1.5px dashed #3a3a3e", background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#7a7974" }}>
+              <Upload size={18} />
+            </button>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
+        <div style={{ fontSize: 11.5, color: "#7a7974", marginBottom: 14 }}>Hasta 4 fotos por producto. Se optimizan automáticamente para que carguen rápido.</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "10px", fontSize: 13 }}>Cancelar</button>
+          <button onClick={() => onSave(list)} style={{ flex: 1, background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "10px", fontSize: 13 }}>Guardar fotos</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImportExcelModal({ onClose, onImport }) {
+  const [rows, setRows] = useState([]);
+  const [fileName, setFileName] = useState("");
+  const [error, setError] = useState("");
+  const fileRef = useRef(null);
+
+  const norm = (s) => (s || "").toString().trim().toLowerCase();
+
+  const handleFile = async (file) => {
+    setError(""); setFileName(file.name);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+      if (json.length === 0) { setError("El archivo no tiene filas de datos."); setRows([]); return; }
+
+      const keyMap = {};
+      Object.keys(json[0]).forEach((k) => {
+        const nk = norm(k);
+        if (nk.includes("codigo") || nk.includes("código")) keyMap.code = k;
+        else if (nk.includes("diameter") || nk.includes("medida")) keyMap.diameter = k;
+        else if (nk.includes("name") || nk.includes("nombre")) keyMap.name = k;
+        else if (nk.includes("logo") || nk.includes("marca")) keyMap.logo = k;
+        else if (nk.includes("color")) keyMap.color = k;
+        else if (nk.includes("price") || nk.includes("precio")) keyMap.price = k;
+        else if (nk.includes("quantity") || nk.includes("cantidad") || nk.includes("stock")) keyMap.qty = k;
+      });
+
+      if (!keyMap.code || !keyMap.name) {
+        setError("No reconozco las columnas. Asegúrate de tener al menos Código y Name/Nombre.");
+        setRows([]);
+        return;
+      }
+
+      const parsed = json.map((r) => ({
+        code: (r[keyMap.code] ?? "").toString().trim(),
+        diameter: (r[keyMap.diameter] ?? "").toString().trim(),
+        name: (r[keyMap.name] ?? "").toString().trim(),
+        logo: (r[keyMap.logo] ?? "NA").toString().trim() || "NA",
+        color: (r[keyMap.color] ?? "NA").toString().trim() || "NA",
+        price: parseFloat(r[keyMap.price]) || 0,
+        qty: parseInt(r[keyMap.qty]) || 0,
+      })).filter((r) => r.code);
+
+      setRows(parsed);
+    } catch (e) {
+      setError("No pude leer el archivo. Asegúrate de que sea un .xlsx válido.");
+      setRows([]);
+    }
+  };
+
+  const confirm = () => {
+    onImport(rows);
+    onClose();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#141415", border: "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(600px,100%)", maxHeight: "85vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div className="disp" style={{ fontSize: 15, fontWeight: 700 }}>Importar productos desde Excel</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#9a9994" }}><X size={18} /></button>
+        </div>
+
+        {rows.length === 0 && (
+          <>
+            <div style={{ fontSize: 12, color: "#9a9994", marginBottom: 12, lineHeight: 1.5 }}>
+              Sube un archivo .xlsx con columnas <b>Código, Diameter, Name, Logo, Color, Price, Quantity</b> (los nombres pueden variar un poco, ej. "Nombre" o "Precio" también funcionan).
+            </div>
+            <button onClick={() => fileRef.current.click()} style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, border: "1.5px dashed #3a3a3e", borderRadius: 10, padding: "28px", background: "transparent", color: "#9a9994" }}>
+              <FileSpreadsheet size={26} />
+              <span style={{ fontSize: 12.5 }}>{fileName || "Toca para elegir un archivo .xlsx"}</span>
+            </button>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => e.target.files[0] && handleFile(e.target.files[0])} />
+            {error && <div style={{ color: "#e08585", fontSize: 12, marginTop: 10 }}>{error}</div>}
+          </>
+        )}
+
+        {rows.length > 0 && (
+          <>
+            <div style={{ fontSize: 12.5, color: "#3fae6a", marginBottom: 10 }}>{fileName} — {rows.length} productos listos para importar</div>
+            <div className="m164-scrollbar" style={{ maxHeight: 280, overflowY: "auto", border: "1px solid #232326", borderRadius: 8, marginBottom: 14 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+                <thead>
+                  <tr style={{ position: "sticky", top: 0, background: "#1a1a1c" }}>
+                    {["Código","Medida","Nombre","Logo","Color","Precio","Cant."].map((h) => (
+                      <th key={h} style={{ padding: "6px 8px", textAlign: "left", color: "#9a9994", fontWeight: 600 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i} style={{ borderTop: "1px solid #1d1d20" }}>
+                      <td style={{ padding: "5px 8px", color: "#e2823c", fontWeight: 600 }}>{r.code}</td>
+                      <td style={{ padding: "5px 8px" }}>{r.diameter}</td>
+                      <td style={{ padding: "5px 8px" }}>{r.name}</td>
+                      <td style={{ padding: "5px 8px" }}>{r.logo}</td>
+                      <td style={{ padding: "5px 8px" }}>{r.color}</td>
+                      <td style={{ padding: "5px 8px" }}>{money(r.price)}</td>
+                      <td style={{ padding: "5px 8px" }}>{r.qty}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setRows([]); setFileName(""); }} style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "10px", fontSize: 13 }}>Elegir otro archivo</button>
+              <button onClick={confirm} style={{ flex: 1, background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "10px", fontSize: 13 }}>Importar {rows.length} productos</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NewProductModal({ onClose, onSave }) {
+  const [form, setForm] = useState({ code: "", diameter: "", name: "", logo: "NA", color: "NA", price: "", qty: "" });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const canSave = form.code.trim() && form.name.trim() && form.price !== "";
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#141415", border: "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(420px,100%)", maxHeight: "85vh", overflowY: "auto" }}>
+        <div className="disp" style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Nuevo producto</div>
+        {[
+          ["code","Código"], ["diameter","Medida (ej. 10.8mm)"], ["name","Nombre"], ["logo","Logo / marca de llanta"], ["color","Color"],
+        ].map(([k,label]) => (
+          <div key={k} style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 11.5, color: "#9a9994", display: "block", marginBottom: 4 }}>{label}</label>
+            <input value={form[k]} onChange={set(k)} style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "9px 10px", color: "#f3f1ec", fontSize: 13.5 }} />
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 11.5, color: "#9a9994", display: "block", marginBottom: 4 }}>Precio (usd)</label>
+            <input type="number" step="0.01" value={form.price} onChange={set("price")} style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "9px 10px", color: "#f3f1ec", fontSize: 13.5 }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 11.5, color: "#9a9994", display: "block", marginBottom: 4 }}>Cantidad disponible</label>
+            <input type="number" value={form.qty} onChange={set("qty")} style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "9px 10px", color: "#f3f1ec", fontSize: 13.5 }} />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "10px", fontSize: 13 }}>Cancelar</button>
+          <button disabled={!canSave} onClick={() => onSave({ ...form, price: parseFloat(form.price) || 0, qty: parseInt(form.qty) || 0 })}
+            style={{ flex: 1, background: canSave ? "#e2823c" : "#3a3a3e", border: "none", color: canSave ? "#0c0c0d" : "#7a7974", fontWeight: 700, borderRadius: 8, padding: "10px", fontSize: 13 }}>
+            Guardar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminProductos({ products, setAddedProducts, overrides, setOverrides }) {
+  const [query, setQuery] = useState("");
+  const [photoTarget, setPhotoTarget] = useState(null);
+  const [showNew, setShowNew] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+
+  const visible = products.filter((p) => {
+    if (!query.trim()) return true;
+    const q = query.toLowerCase();
+    return [p.code, p.name, p.diameter, p.logo, p.color].some((f) => (f || "").toLowerCase().includes(q));
+  });
+
+  const updateOverride = (id, patch) => {
+    setOverrides((prev) => {
+      const nextForId = { ...(prev[id] || {}), ...patch };
+      fbSaveDoc("overrides", id, nextForId);
+      return { ...prev, [id]: nextForId };
+    });
+  };
+
+  const completeName = (p) => [p.code, p.diameter, p.name, p.logo, p.color].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+
+  const exportNuevos = () => {
+    const rows = [["Código","Diameter","Name","Logo","Color","Price","Quantity"]];
+    products.filter((p) => p.isNew).forEach((p) => {
+      const ov = overrides[p.id] || {};
+      rows.push([p.code, p.diameter, p.name, p.logo, p.color, ov.price ?? p.price, ov.qty ?? p.qty]);
+    });
+    downloadCSV(`productos_nuevos_${Date.now()}.csv`, rows);
+  };
+
+  const th = { textAlign: "left", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "#9a9994", borderBottom: "1px solid #2a2a2e", whiteSpace: "nowrap", background: "#151516", position: "sticky", top: 0 };
+  const td = { padding: "6px 10px", fontSize: 12.5, borderBottom: "1px solid #1d1d20", color: "#e9e7e1", whiteSpace: "nowrap" };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
+          <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#7a7974" }} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar producto..."
+            style={{ width: "100%", background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "8px 10px 8px 30px", color: "#f3f1ec", fontSize: 13 }} />
+        </div>
+        <button onClick={() => setShowNew(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: "#e2823c", border: "none", color: "#0c0c0d", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 700 }}>
+          <Plus size={14} /> Nuevo producto
+        </button>
+        <button onClick={() => setShowImport(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600 }}>
+          <FileSpreadsheet size={14} /> Importar Excel
+        </button>
+        <button onClick={exportNuevos} style={{ display: "flex", alignItems: "center", gap: 6, background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600 }}>
+          <Download size={14} /> Exportar nuevos
+        </button>
+      </div>
+      <div style={{ fontSize: 11.5, color: "#7a7974", marginBottom: 10 }}>Mostrando {visible.length} de {products.length} productos. Precio y stock disponible se guardan al escribir — úsalo para corregir el inventario manualmente cuando agregues fotos o edites datos.</div>
+      <div className="m164-scrollbar" style={{ overflowX: "auto", border: "1px solid #232326", borderRadius: 10, maxHeight: "70vh", overflowY: "auto" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 980 }}>
+          <thead>
+            <tr>
+              <th style={th}>Foto</th>
+              <th style={th}>CÓDIGO</th>
+              <th style={th}>Diameter</th>
+              <th style={th}>Name</th>
+              <th style={th}>Logo</th>
+              <th style={th}>Color</th>
+              <th style={{ ...th, minWidth: 260 }}>Complete Name</th>
+              <th style={th}>Price</th>
+              <th style={th}>Stock disponible</th>
+              <th style={th}>Fotos</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((p) => {
+              const ov = overrides[p.id] || {};
+              const photos = ov.photos || [];
+              return (
+                <tr key={p.id}>
+                  <td style={td}>
+                    <div style={{ width: 32, height: 32, borderRadius: 5, overflow: "hidden", background: "#0f0f10", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {photos[0] ? <img src={photos[0]} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <TirePlaceholder size={18} />}
+                    </div>
+                  </td>
+                  <td style={{ ...td, fontWeight: 700, color: "#e2823c" }}>{p.code}{p.isNew && <span style={{ color: "#3fae6a", fontSize: 9.5, marginLeft: 4 }}>nuevo</span>}</td>
+                  <td style={td}>{p.diameter}</td>
+                  <td style={{ ...td, whiteSpace: "normal", minWidth: 160 }}>{p.name}</td>
+                  <td style={td}>{p.logo}</td>
+                  <td style={td}>{p.color}</td>
+                  <td style={{ ...td, whiteSpace: "normal", color: "#b5b3ad", fontSize: 12 }}>{completeName(p)}</td>
+                  <td style={td}>
+                    <input type="number" step="0.01" value={ov.price ?? p.price}
+                      onChange={(e) => updateOverride(p.id, { price: parseFloat(e.target.value) || 0 })}
+                      style={{ width: 64, background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 6, padding: "4px 6px", color: "#f3f1ec", fontSize: 12 }} />
+                  </td>
+                  <td style={td}>
+                    <input type="number" value={ov.qty ?? p.qty} title="Corrige aquí el stock disponible"
+                      onChange={(e) => updateOverride(p.id, { qty: parseInt(e.target.value) || 0 })}
+                      style={{ width: 54, background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 6, padding: "4px 6px", color: "#f3f1ec", fontSize: 12 }} />
+                  </td>
+                  <td style={td}>
+                    <button onClick={() => setPhotoTarget(p)} style={{ background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 6, padding: "5px 8px", fontSize: 11.5, display: "flex", alignItems: "center", gap: 4 }}>
+                      <Upload size={12} /> {photos.length || 0}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {photoTarget && (
+        <ProductPhotosModal product={photoTarget} photos={(overrides[photoTarget.id] || {}).photos || []}
+          onClose={() => setPhotoTarget(null)}
+          onSave={(list) => { updateOverride(photoTarget.id, { photos: list }); setPhotoTarget(null); }} />
+      )}
+      {showNew && (
+        <NewProductModal onClose={() => setShowNew(false)}
+          onSave={(form) => {
+            const id = "new-" + Date.now();
+            const newProduct = {
+              id, code: form.code, diameter: form.diameter, name: form.name, logo: form.logo, color: form.color,
+              price: form.price, qty: form.qty, category: "Otros", isNew: true,
+              sizeTag: sizeTagOf(form.diameter), colorTags: colorTagsOf(form.color), brandTag: brandTagOf(form.logo),
+            };
+            setAddedProducts((prev) => [...prev, newProduct]);
+            fbSaveDoc("added_products", id, newProduct);
+            setShowNew(false);
+          }} />
+      )}
+      {showImport && (
+        <ImportExcelModal onClose={() => setShowImport(false)}
+          onImport={(importedRows) => {
+            const newOnes = importedRows.map((r, i) => ({
+              id: "new-" + Date.now() + "-" + i,
+              code: r.code, diameter: r.diameter, name: r.name, logo: r.logo, color: r.color,
+              price: r.price, qty: r.qty, category: "Otros", isNew: true,
+              sizeTag: sizeTagOf(r.diameter), colorTags: colorTagsOf(r.color), brandTag: brandTagOf(r.logo),
+            }));
+            setAddedProducts((prev) => [...prev, ...newOnes]);
+            newOnes.forEach((p) => fbSaveDoc("added_products", p.id, p));
+          }} />
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Admin: Ajustes tab ---------------- */
+
+function AdminAjustes({ settings, setSettings }) {
+  const [local, setLocal] = useState(settings);
+  const logoRef = useRef(null);
+
+  const handleLogo = async (files) => {
+    if (!files || !files[0]) return;
+    const resized = await resizeImage(files[0], 300, 0.85);
+    setLocal((l) => ({ ...l, logo: resized }));
+  };
+
+  return (
+    <div style={{ maxWidth: 380 }}>
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: 12, color: "#9a9994", display: "block", marginBottom: 5 }}>Logo del catálogo</label>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#000", border: "2px solid #e2823c", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {local.logo ? <img src={local.logo} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 10, color: "#7a7974" }}>Sin logo</span>}
+          </div>
+          <button onClick={() => logoRef.current.click()} style={{ background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}>
+            <Upload size={13} /> Subir logo
+          </button>
+          {local.logo && (
+            <button onClick={() => setLocal((l) => ({ ...l, logo: null }))} style={{ background: "none", border: "none", color: "#9a9994", fontSize: 12 }}>Quitar</button>
+          )}
+        </div>
+        <input ref={logoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => handleLogo(e.target.files)} />
+        <div style={{ fontSize: 11, color: "#7a7974", marginTop: 6 }}>Se recorta en círculo automáticamente. Recuerda presionar "Guardar ajustes" después de subirlo.</div>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: 12, color: "#9a9994", display: "block", marginBottom: 5 }}>Número de WhatsApp (con código de país, sin +)</label>
+        <input value={local.whatsapp} onChange={(e) => setLocal((l) => ({ ...l, whatsapp: e.target.value }))}
+          placeholder="584121234567" style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "9px 10px", color: "#f3f1ec", fontSize: 13.5 }} />
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: 12, color: "#9a9994", display: "block", marginBottom: 5 }}>PIN de administrador</label>
+        <input value={local.pin} onChange={(e) => setLocal((l) => ({ ...l, pin: e.target.value }))}
+          style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "9px 10px", color: "#f3f1ec", fontSize: 13.5 }} />
+      </div>
+      <button onClick={() => { setSettings(local); fbSaveDoc("meta", "settings", local); }} style={{ background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "10px 16px", fontSize: 13 }}>
+        Guardar ajustes
+      </button>
+      <div style={{ marginTop: 20, padding: 14, background: "#151516", border: "1px solid #232326", borderRadius: 10, fontSize: 12, color: "#9a9994", lineHeight: 1.5 }}>
+        Los pedidos confirmados y los productos nuevos se exportan como CSV desde sus pestañas — úsalos para actualizar tu registro maestro de Ruedas Pedido.
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Admin shell ---------------- */
+
+function AdminView({ setView, orders, setOrders, clientes, setClientes, products, setAddedProducts, overrides, setOverrides, settings, setSettings, logo, onLogout }) {
+  const [tab, setTab] = useState("pedidos");
+  const pendCount = orders.filter((o) => o.status === "Pendiente").length;
+  return (
+    <>
+      <Header view="admin" isAdmin={true} setView={setView} cartCount={0} onOpenCart={() => {}} logo={logo} />
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px" }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, borderBottom: "1px solid #232326", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: 6 }}>
+          {[["pedidos","Pedidos",ClipboardList,pendCount],["productos","Productos",Package,0],["ajustes","Ajustes",Settings,0]].map(([id,label,Icon,badge]) => (
+            <button key={id} onClick={() => setTab(id)} style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", background: "none", border: "none",
+              borderBottom: tab === id ? "2px solid #e2823c" : "2px solid transparent",
+              color: tab === id ? "#e2823c" : "#9a9994", fontSize: 13, fontWeight: 600,
+            }}>
+              <Icon size={15} /> {label}
+              {badge > 0 && <span style={{ background: "#e2823c", color: "#0c0c0d", fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: "1px 6px" }}>{badge}</span>}
+            </button>
+          ))}
+          </div>
+          <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "1px solid #2c2c30", color: "#9a9994", borderRadius: 8, padding: "7px 12px", fontSize: 12, marginBottom: 8 }}>
+            <LogOut size={13} /> Cerrar sesión
+          </button>
+        </div>
+        {tab === "pedidos" && <AdminPedidos orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes} />}
+        {tab === "productos" && <AdminProductos products={products} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides} />}
+        {tab === "ajustes" && <AdminAjustes settings={settings} setSettings={setSettings} />}
+      </div>
+    </>
+  );
+}
+
+/* ---------------- Root App ---------------- */
+
+function App() {
+  const [loaded, setLoaded] = useState(false);
+  const [view, setView] = useState("client");
+  const [showGate, setShowGate] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  const [addedProducts, setAddedProducts] = useState([]);
+  const [overrides, setOverrides] = useState({});
+  const [orders, setOrders] = useState([]);
+  const [clientes, setClientes] = useState(SEED_CLIENTES);
+  const [settings, setSettings] = useState({ whatsapp: "", pin: "1234", logo: null });
+  const [cart, setCart] = useState({});
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      const [addedMap, overridesMap, ordersMap, clientesDoc, settingsDoc] = await Promise.all([
+        fbFetchCollection("added_products"),
+        fbFetchCollection("overrides"),
+        fbFetchCollection("orders"),
+        fbFetchDoc("meta", "clientes", { list: SEED_CLIENTES }),
+        fbFetchDoc("meta", "settings", { whatsapp: "", pin: "1234", logo: null }),
+      ]);
+      setAddedProducts(Object.values(addedMap));
+      setOverrides(overridesMap);
+      setOrders(Object.values(ordersMap));
+      setClientes(clientesDoc.list || SEED_CLIENTES);
+      setSettings(settingsDoc);
+      setLoaded(true);
+    })();
+  }, []);
+
+  const allProducts = useMemo(() => {
+    const merged = [...SEED_PRODUCTS, ...addedProducts].map((p) => {
+      const ov = overrides[p.id];
+      if (!ov) return p;
+      return { ...p, price: ov.price ?? p.price, qty: ov.qty ?? p.qty };
+    });
+    return merged;
+  }, [addedProducts, overrides]);
+
+  const submitOrder = (items, total) => {
+    const order = {
+      id: "P" + Date.now().toString().slice(-8),
+      createdAt: Date.now(),
+      status: "Pendiente",
+      discount: 0,
+      cliente: "",
+      total,
+      items: items.map(({ product, qty }) => ({ id: product.id, code: product.code, diameter: product.diameter, name: product.name, logo: product.logo, color: product.color, price: product.price, qty })),
+    };
+    fbSaveDoc("orders", order.id, order);
+    setOrders((prev) => [...prev, order]);
+    setCart({});
+
+    const lines = items.map(({ product, qty }) => `• ${qty}x ${product.code} ${product.name}${product.color && product.color.toUpperCase()!=="NA" ? " ("+product.color+")" : ""} — ${money(product.price*qty)}`);
+    const text = `*Pedido Mundo 1/64* #${order.id}\n\n${lines.join("\n")}\n\n*Total: ${money(total)}*\n\nEstado: pendiente de confirmación de pago.`;
+    const phone = (settings.whatsapp || "").replace(/\D/g, "");
+    const url = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank");
+    setToast("¡Pedido enviado! Revisa WhatsApp para confirmarlo.");
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  if (!loaded) {
+    return (
+      <div className="m164" style={{ minHeight: 400, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <BrandStyles />
+        <div style={{ color: "#9a9994", fontSize: 13 }}>Cargando catálogo...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="m164" style={{ minHeight: 400, paddingBottom: 30 }}>
+      <BrandStyles />
+      {view === "client" ? (
+        <>
+          <ClientCatalog products={allProducts} overrides={overrides} cart={cart} setCart={setCart} whatsapp={settings.whatsapp} onSubmitOrder={submitOrder} logo={settings.logo} />
+          <div style={{ textAlign: "center", padding: "18px 0" }}>
+            <button onClick={() => setShowGate(true)} style={{ background: "none", border: "none", color: "#4a4a4d", fontSize: 11 }}>Acceso administrador</button>
+          </div>
+        </>
+      ) : (
+        <AdminView setView={setView} orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes}
+          products={allProducts} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides}
+          settings={settings} setSettings={setSettings} logo={settings.logo}
+          onLogout={() => { setIsAdmin(false); setView("client"); }} />
+      )}
+      {showGate && (
+        <AdminGate pin={settings.pin} onCancel={() => setShowGate(false)} onSuccess={() => { setIsAdmin(true); setView("admin"); setShowGate(false); }} />
+      )}
+      {toast && (
+        <div style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "#1f1f22", border: "1px solid #e2823c", color: "#f3f1ec", padding: "12px 20px", borderRadius: 10, fontSize: 13, zIndex: 70, boxShadow: "0 6px 20px rgba(0,0,0,0.4)" }}>
+          {toast}
+        </div>
+      )}
+      {isAdmin && view === "client" && (
+        <div style={{ position: "fixed", bottom: 16, left: 16, zIndex: 40 }}>
+          <button onClick={() => setView("admin")} style={{ background: "#1a1a1c", border: "1px solid #2c2c30", color: "#e2823c", borderRadius: 999, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+            <Settings size={13}/> Panel admin
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const rootEl = document.getElementById("root");
+createRoot(rootEl).render(<App />);
+
+</script>
+</body>
+</html>
