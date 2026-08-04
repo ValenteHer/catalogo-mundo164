@@ -112,6 +112,37 @@ function resizeImage(file, maxDim = 900, quality = 0.72) {
   });
 }
 
+function downloadDataUrl(dataUrl, filename) {
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function downloadOrderExcel(order) {
+  const rows = [["Timestamp","Unidades","Nombre del cliente","Fecha de Pedido","Modelo","Tipo","Descuento","Comentario","Precio","ID Pedido"]];
+  order.items.forEach((it) => {
+    rows.push([
+      new Date(order.createdAt).toISOString(),
+      it.qty,
+      "",
+      fmtDate(order.createdAt),
+      [it.code, it.diameter, it.name, it.logo, it.color].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(),
+      "Venta",
+      0,
+      `Pedido Web ${order.id}`,
+      it.price,
+      order.id,
+    ]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Pedido");
+  XLSX.writeFile(wb, `Pedido_${order.id}.xlsx`);
+}
+
 function downloadCSV(filename, rows) {
   const esc = (v) => {
     const s = v === null || v === undefined ? "" : String(v);
@@ -183,6 +214,13 @@ function sizeTagOf(raw) {
   nums.forEach((n) => { const f = fmt(n); if (!seen.includes(f)) seen.push(f); });
   return seen.join("+") + "mm";
 }
+function vehicleOf(sizeTag) {
+  if (!sizeTag) return null;
+  const nums = sizeTag.replace(/mm/gi, "").split("+").map((n) => parseFloat(n)).filter((n) => !isNaN(n));
+  if (nums.length === 0) return null;
+  const max = Math.max(...nums);
+  return max > 12.7 ? "Camioneta" : "Carro";
+}
 function brandTagOf(raw) {
   if (!raw) return null;
   const low = raw.trim().toLowerCase();
@@ -234,6 +272,7 @@ const Lock = Icon(<><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M
 const Download = Icon(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></>);
 const LogOut = Icon(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></>);
 const FileSpreadsheet = Icon(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M8 13v4"/><path d="M12 13v4"/><path d="M16 13v4"/></>);
+const Camera = Icon(<><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></>);
 
 /* ---------------- Brand shell / global styles ---------------- */
 
@@ -484,7 +523,7 @@ function CartDrawer({ open, onClose, cart, products, onQty, onSend, whatsapp }) 
               Enviar pedido por WhatsApp
             </button>
             <div style={{ fontSize: 11, color: "#7a7974", marginTop: 8, textAlign: "center" }}>
-              Tu pedido queda pendiente de confirmación de pago.
+              Se descargará el Excel del pedido (y fotos si hay) — adjúntalos en el chat que se abre.
             </div>
           </div>
         )}
@@ -565,6 +604,7 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsapp, onSubmitO
   const [sizes_sel, setSizesSel] = useState([]);
   const [colors_sel, setColorsSel] = useState([]);
   const [brands_sel, setBrandsSel] = useState([]);
+  const [vehicle_sel, setVehicleSel] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [openFilter, setOpenFilter] = useState(null);
 
@@ -583,17 +623,22 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsapp, onSubmitO
     const s = new Set(products.filter((p) => p.qty > 0).map((p) => p.brandTag).filter(Boolean));
     return Array.from(s).sort();
   }, [products]);
+  const vehicles = useMemo(() => {
+    const s = new Set(products.filter((p) => p.qty > 0).map((p) => vehicleOf(p.sizeTag)).filter(Boolean));
+    return Array.from(s).sort();
+  }, [products]);
 
   const visible = useMemo(() => {
     return products.filter((p) => {
       if (sizes_sel.length > 0 && !sizes_sel.includes(p.sizeTag)) return false;
       if (colors_sel.length > 0 && !(p.colorTags || []).some((t) => colors_sel.includes(t))) return false;
       if (brands_sel.length > 0 && !brands_sel.includes(p.brandTag)) return false;
+      if (vehicle_sel.length > 0 && !vehicle_sel.includes(vehicleOf(p.sizeTag))) return false;
       if (!query.trim()) return true;
       const q = query.toLowerCase();
       return [p.code, p.name, p.diameter, p.color, p.logo].some((f) => (f || "").toLowerCase().includes(q));
     });
-  }, [products, query, sizes_sel, colors_sel, brands_sel]);
+  }, [products, query, sizes_sel, colors_sel, brands_sel, vehicle_sel]);
 
   const cartCount = Object.values(cart).reduce((s, v) => s + v, 0);
 
@@ -622,6 +667,7 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsapp, onSubmitO
           />
         </div>
 
+        <FilterDropdown label="Tipo de vehículo" options={vehicles} selected={vehicle_sel} onToggle={toggleIn(setVehicleSel)} onRemove={toggleIn(setVehicleSel)} openId={openFilter} setOpenId={setOpenFilter} />
         <FilterDropdown label="Tamaño" options={sizes} selected={sizes_sel} onToggle={toggleIn(setSizesSel)} onRemove={toggleIn(setSizesSel)} openId={openFilter} setOpenId={setOpenFilter} />
         <FilterDropdown label="Marca del caucho" options={brands} selected={brands_sel} onToggle={toggleIn(setBrandsSel)} onRemove={toggleIn(setBrandsSel)} openId={openFilter} setOpenId={setOpenFilter} />
         <FilterDropdown label="Color" options={colors} selected={colors_sel} onToggle={toggleIn(setColorsSel)} onRemove={toggleIn(setColorsSel)} openId={openFilter} setOpenId={setOpenFilter} swatches={COLOR_SWATCH} />
@@ -838,6 +884,7 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes }) {
 function ProductPhotosModal({ product, photos, onClose, onSave }) {
   const [list, setList] = useState(photos || []);
   const fileRef = useRef(null);
+  const cameraRef = useRef(null);
 
   const handleFiles = async (files) => {
     const arr = Array.from(files).slice(0, 4 - list.length);
@@ -863,11 +910,19 @@ function ProductPhotosModal({ product, photos, onClose, onSave }) {
             </div>
           ))}
           {list.length < 4 && (
-            <button onClick={() => fileRef.current.click()} style={{ aspectRatio: "1", borderRadius: 8, border: "1.5px dashed #3a3a3e", background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#7a7974" }}>
-              <Upload size={18} />
-            </button>
+            <>
+              <button onClick={() => cameraRef.current.click()} style={{ aspectRatio: "1", borderRadius: 8, border: "1.5px dashed #3a3a3e", background: "transparent", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, color: "#7a7974" }}>
+                <Camera size={18} />
+                <span style={{ fontSize: 9.5 }}>Cámara</span>
+              </button>
+              <button onClick={() => fileRef.current.click()} style={{ aspectRatio: "1", borderRadius: 8, border: "1.5px dashed #3a3a3e", background: "transparent", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, color: "#7a7974" }}>
+                <Upload size={18} />
+                <span style={{ fontSize: 9.5 }}>Galería</span>
+              </button>
+            </>
           )}
         </div>
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
         <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
         <div style={{ fontSize: 11.5, color: "#7a7974", marginBottom: 14 }}>Hasta 4 fotos por producto. Se optimizan automáticamente para que carguen rápido.</div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -1323,13 +1378,34 @@ function App() {
     setOrders((prev) => [...prev, order]);
     setCart({});
 
+    const photoDownloads = [];
+    items.forEach(({ product }) => {
+      const photo = (overrides[product.id] && overrides[product.id].photos && overrides[product.id].photos[0]) || null;
+      if (photo) {
+        const safeColor = (product.color || "").replace(/[^a-zA-Z0-9]+/g, "-");
+        photoDownloads.push({ dataUrl: photo, filename: `${product.code}${safeColor ? "-" + safeColor : ""}.jpg` });
+      }
+    });
+
     const lines = items.map(({ product, qty }) => `• ${qty}x ${product.code} ${product.name}${product.color && product.color.toUpperCase()!=="NA" ? " ("+product.color+")" : ""} — ${money(product.price*qty)}`);
-    const text = `*Pedido Mundo 1/64* #${order.id}\n\n${lines.join("\n")}\n\n*Total: ${money(total)}*\n\nEstado: pendiente de confirmación de pago.`;
+    const attachNote = photoDownloads.length > 0
+      ? `\n\n📎 Se descargaron el Excel del pedido y ${photoDownloads.length} foto(s) — adjúntalas aquí antes de enviar.`
+      : `\n\n📎 Se descargó el Excel del pedido — adjúntalo aquí antes de enviar.`;
+    const text = `*Pedido Mundo 1/64* #${order.id}\n\n${lines.join("\n")}\n\n*Total: ${money(total)}*\n\nEstado: pendiente de confirmación de pago.${attachNote}`;
     const phone = (settings.whatsapp || "").replace(/\D/g, "");
     const url = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
+
+    // Abrir WhatsApp primero (dentro del gesto del usuario, para que no lo bloquee el navegador)
     window.open(url, "_blank");
-    setToast("¡Pedido enviado! Revisa WhatsApp para confirmarlo.");
-    setTimeout(() => setToast(null), 4000);
+
+    // Luego descargar el Excel y las fotos, escalonados para que el navegador no las bloquee
+    setTimeout(() => downloadOrderExcel(order), 300);
+    photoDownloads.forEach((p, i) => {
+      setTimeout(() => downloadDataUrl(p.dataUrl, p.filename), 300 * (i + 2));
+    });
+
+    setToast("¡Pedido enviado! Revisa tus descargas y adjúntalas en WhatsApp.");
+    setTimeout(() => setToast(null), 5000);
   };
 
   if (!loaded) {
