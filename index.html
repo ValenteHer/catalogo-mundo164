@@ -16,6 +16,7 @@
     "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1",
     "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
     "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js",
+    "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
     "xlsx": "https://esm.sh/xlsx@0.18.5"
   }
 }
@@ -30,6 +31,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { createRoot } from "react-dom/client";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc } from "firebase/firestore";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import * as XLSX from "xlsx";
 
 /* ============================================================
@@ -54,6 +56,7 @@ const firebaseConfig = {
 
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
+const auth = getAuth(fbApp);
 
 async function fbFetchCollection(name) {
   const out = {};
@@ -646,9 +649,24 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsapp, onSubmitO
 
 /* ---------------- Admin: login gate ---------------- */
 
-function AdminGate({ pin, onSuccess, onCancel }) {
-  const [val, setVal] = useState("");
-  const [err, setErr] = useState(false);
+function AdminGate({ onSuccess, onCancel }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const doLogin = async () => {
+    setErr(""); setLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      onSuccess();
+    } catch (e) {
+      setErr("Correo o contraseña incorrectos.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ background: "#141415", border: "1px solid #2a2a2e", borderRadius: 16, padding: 24, width: "min(320px,100%)" }}>
@@ -657,16 +675,22 @@ function AdminGate({ pin, onSuccess, onCancel }) {
           <div className="disp" style={{ fontSize: 15, fontWeight: 700 }}>Acceso administrador</div>
         </div>
         <input
-          type="password" value={val} autoFocus
-          onChange={(e) => { setVal(e.target.value); setErr(false); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { if (val === pin) onSuccess(); else setErr(true); } }}
-          placeholder="PIN"
+          type="email" value={email} autoFocus autoComplete="username"
+          onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+          placeholder="Correo"
+          style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "10px 12px", color: "#f3f1ec", fontSize: 14, marginBottom: 8 }}
+        />
+        <input
+          type="password" value={password} autoComplete="current-password"
+          onChange={(e) => { setPassword(e.target.value); setErr(""); }}
+          onKeyDown={(e) => { if (e.key === "Enter") doLogin(); }}
+          placeholder="Contraseña"
           style={{ width: "100%", background: "#1f1f22", border: err ? "1px solid #d9534f" : "1px solid #2a2a2e", borderRadius: 8, padding: "10px 12px", color: "#f3f1ec", fontSize: 14, marginBottom: 10 }}
         />
-        {err && <div style={{ color: "#e08585", fontSize: 12, marginBottom: 10 }}>PIN incorrecto.</div>}
+        {err && <div style={{ color: "#e08585", fontSize: 12, marginBottom: 10 }}>{err}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onCancel} style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "9px", fontSize: 13 }}>Cancelar</button>
-          <button onClick={() => { if (val === pin) onSuccess(); else setErr(true); }} style={{ flex: 1, background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "9px", fontSize: 13 }}>Entrar</button>
+          <button disabled={loading} onClick={doLogin} style={{ flex: 1, background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "9px", fontSize: 13 }}>{loading ? "..." : "Entrar"}</button>
         </div>
       </div>
     </div>
@@ -1188,10 +1212,10 @@ function AdminAjustes({ settings, setSettings }) {
         <input value={local.whatsapp} onChange={(e) => setLocal((l) => ({ ...l, whatsapp: e.target.value }))}
           placeholder="584121234567" style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "9px 10px", color: "#f3f1ec", fontSize: 13.5 }} />
       </div>
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ fontSize: 12, color: "#9a9994", display: "block", marginBottom: 5 }}>PIN de administrador</label>
-        <input value={local.pin} onChange={(e) => setLocal((l) => ({ ...l, pin: e.target.value }))}
-          style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "9px 10px", color: "#f3f1ec", fontSize: 13.5 }} />
+      <div style={{ marginBottom: 14, padding: 12, background: "#151516", border: "1px solid #232326", borderRadius: 10 }}>
+        <div style={{ fontSize: 12.5, color: "#9a9994", lineHeight: 1.5 }}>
+          El acceso administrador ahora usa correo y contraseña reales (más seguro que un PIN). Para cambiar tu contraseña o agregar otro administrador, hazlo desde <b>Firebase Console → Authentication → Users</b>.
+        </div>
       </div>
       <button onClick={() => { setSettings(local); fbSaveDoc("meta", "settings", local); }} style={{ background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "10px 16px", fontSize: 13 }}>
         Guardar ajustes
@@ -1244,6 +1268,11 @@ function App() {
   const [view, setView] = useState("client");
   const [showGate, setShowGate] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => setIsAdmin(!!user));
+    return unsub;
+  }, []);
 
   const [addedProducts, setAddedProducts] = useState([]);
   const [overrides, setOverrides] = useState({});
@@ -1326,10 +1355,10 @@ function App() {
         <AdminView setView={setView} orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes}
           products={allProducts} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides}
           settings={settings} setSettings={setSettings} logo={settings.logo}
-          onLogout={() => { setIsAdmin(false); setView("client"); }} />
+          onLogout={() => { signOut(auth); setView("client"); }} />
       )}
       {showGate && (
-        <AdminGate pin={settings.pin} onCancel={() => setShowGate(false)} onSuccess={() => { setIsAdmin(true); setView("admin"); setShowGate(false); }} />
+        <AdminGate onCancel={() => setShowGate(false)} onSuccess={() => { setView("admin"); setShowGate(false); }} />
       )}
       {toast && (
         <div style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "#1f1f22", border: "1px solid #e2823c", color: "#f3f1ec", padding: "12px 20px", borderRadius: 10, fontSize: 13, zIndex: 70, boxShadow: "0 6px 20px rgba(0,0,0,0.4)" }}>
