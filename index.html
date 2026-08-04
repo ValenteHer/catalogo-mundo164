@@ -761,6 +761,12 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes }) {
     });
   };
 
+  const deleteOrder = (id) => {
+    if (!window.confirm("¿Eliminar este pedido? Esta acción no se puede deshacer.")) return;
+    setOrders((prev) => prev.filter((o) => o.id !== id));
+    fbDeleteDoc("orders", id);
+  };
+
   const confirmClienteName = (orderId) => {
     const name = newClienteVal.trim();
     if (!name) return;
@@ -868,6 +874,9 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes }) {
                   Marcar pendiente
                 </button>
               )}
+              <button onClick={() => deleteOrder(o.id)} title="Eliminar pedido" style={{ background: "transparent", border: "1px solid #4a2a2a", color: "#e08585", fontSize: 12.5, borderRadius: 8, padding: "8px 10px", display: "flex", alignItems: "center", gap: 6 }}>
+                <Trash2 size={14} />
+              </button>
             </div>
           </div>
         ))}
