@@ -907,18 +907,44 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes }) {
 
 function ProductPhotosModal({ product, photos, onClose, onSave }) {
   const [list, setList] = useState(photos || []);
+  const [pasteFlash, setPasteFlash] = useState(false);
   const fileRef = useRef(null);
   const cameraRef = useRef(null);
+  const listRef = useRef(list);
+  useEffect(() => { listRef.current = list; }, [list]);
 
   const handleFiles = async (files) => {
-    const arr = Array.from(files).slice(0, 4 - list.length);
+    const arr = Array.from(files).slice(0, 4 - listRef.current.length);
+    if (arr.length === 0) return;
     const resized = await Promise.all(arr.map((f) => resizeImage(f, 650, 0.6)));
     setList((l) => [...l, ...resized]);
   };
 
+  useEffect(() => {
+    const onPaste = (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      const imgFiles = [];
+      for (const item of items) {
+        if (item.type && item.type.startsWith("image/")) {
+          const f = item.getAsFile();
+          if (f) imgFiles.push(f);
+        }
+      }
+      if (imgFiles.length > 0) {
+        e.preventDefault();
+        handleFiles(imgFiles);
+        setPasteFlash(true);
+        setTimeout(() => setPasteFlash(false), 700);
+      }
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ background: "#141415", border: "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(480px,100%)", maxHeight: "85vh", overflowY: "auto" }}>
+      <div style={{ background: "#141415", border: pasteFlash ? "1px solid #3fae6a" : "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(480px,100%)", maxHeight: "85vh", overflowY: "auto", transition: "border-color 0.2s" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div className="disp" style={{ fontSize: 15, fontWeight: 700 }}>Fotos — {product.code}</div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#9a9994" }}><X size={18} /></button>
@@ -948,7 +974,10 @@ function ProductPhotosModal({ product, photos, onClose, onSave }) {
         </div>
         <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
         <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
-        <div style={{ fontSize: 11.5, color: "#7a7974", marginBottom: 14 }}>Hasta 4 fotos por producto. Se optimizan automáticamente para que carguen rápido.</div>
+        <div style={{ fontSize: 11.5, color: "#7a7974", marginBottom: 6 }}>Hasta 4 fotos por producto. Se optimizan automáticamente para que carguen rápido.</div>
+        <div style={{ fontSize: 11.5, color: pasteFlash ? "#3fae6a" : "#6a94c9", marginBottom: 14, display: "flex", alignItems: "center", gap: 6, transition: "color 0.2s" }}>
+          {pasteFlash ? <><Check size={13} /> ¡Foto pegada!</> : <>💡 Tip: copia una imagen (Ctrl+C) y pégala aquí con Ctrl+V</>}
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "10px", fontSize: 13 }}>Cancelar</button>
           <button onClick={() => onSave(list)} style={{ flex: 1, background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "10px", fontSize: 13 }}>Guardar fotos</button>
