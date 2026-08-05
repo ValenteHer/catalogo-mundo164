@@ -414,6 +414,7 @@ function ProductCard({ product, photos, cartQty, onAdd, onRemove }) {
     <div className="m164-in" style={{
       background: "#151516", border: "1px solid #232326", borderRadius: 14,
       overflow: "hidden", display: "flex", flexDirection: "column",
+      opacity: product.qty <= 0 ? 0.6 : 1,
     }}>
       <div style={{ position: "relative", aspectRatio: "1.2", background: "#0f0f10", display: "flex", alignItems: "center", justifyContent: "center" }}>
         {hasPhotos ? (
@@ -441,6 +442,11 @@ function ProductCard({ product, photos, cartQty, onAdd, onRemove }) {
         <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,0.6)", color: "#e2823c", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 6, letterSpacing: "0.03em" }}>
           {product.code}
         </div>
+        {product.qty <= 0 && (
+          <div style={{ position: "absolute", top: 8, right: 8, background: "rgba(217,83,79,0.85)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6 }}>
+            Agotado
+          </div>
+        )}
       </div>
       <div style={{ padding: "10px 12px 12px", display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
         <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.25, minHeight: 34 }}>{product.name || "Sin nombre"}</div>
@@ -453,7 +459,9 @@ function ProductCard({ product, photos, cartQty, onAdd, onRemove }) {
         )}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto", paddingTop: 6 }}>
           <div className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#e2823c" }}>{money(product.price)}</div>
-          {cartQty > 0 ? (
+          {product.qty <= 0 ? (
+            <span style={{ fontSize: 11, color: "#7a7974", fontWeight: 600, padding: "6px 4px" }}>Sin stock</span>
+          ) : cartQty > 0 ? (
             <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#1f1f22", borderRadius: 8, padding: "3px 6px" }}>
               <button onClick={onRemove} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" }}><Minus size={13} /></button>
               <span style={{ fontSize: 13, fontWeight: 700, minWidth: 16, textAlign: "center" }}>{cartQty}</span>
@@ -605,6 +613,7 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsapp, onSubmitO
   const [colors_sel, setColorsSel] = useState([]);
   const [brands_sel, setBrandsSel] = useState([]);
   const [vehicle_sel, setVehicleSel] = useState([]);
+  const [avail_sel, setAvailSel] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [openFilter, setOpenFilter] = useState(null);
 
@@ -627,6 +636,7 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsapp, onSubmitO
     const s = new Set(products.filter((p) => p.qty > 0).map((p) => vehicleOf(p.sizeTag)).filter(Boolean));
     return Array.from(s).sort();
   }, [products]);
+  const availOptions = ["Disponible", "Fuera de stock"];
 
   const visible = useMemo(() => {
     return products.filter((p) => {
@@ -634,11 +644,15 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsapp, onSubmitO
       if (colors_sel.length > 0 && !(p.colorTags || []).some((t) => colors_sel.includes(t))) return false;
       if (brands_sel.length > 0 && !brands_sel.includes(p.brandTag)) return false;
       if (vehicle_sel.length > 0 && !vehicle_sel.includes(vehicleOf(p.sizeTag))) return false;
+      if (avail_sel.length > 0) {
+        const availLabel = p.qty > 0 ? "Disponible" : "Fuera de stock";
+        if (!avail_sel.includes(availLabel)) return false;
+      }
       if (!query.trim()) return true;
       const q = query.toLowerCase();
       return [p.code, p.name, p.diameter, p.color, p.logo].some((f) => (f || "").toLowerCase().includes(q));
     });
-  }, [products, query, sizes_sel, colors_sel, brands_sel, vehicle_sel]);
+  }, [products, query, sizes_sel, colors_sel, brands_sel, vehicle_sel, avail_sel]);
 
   const cartCount = Object.values(cart).reduce((s, v) => s + v, 0);
 
@@ -667,6 +681,7 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsapp, onSubmitO
           />
         </div>
 
+        <FilterDropdown label="Disponibilidad" options={availOptions} selected={avail_sel} onToggle={toggleIn(setAvailSel)} onRemove={toggleIn(setAvailSel)} openId={openFilter} setOpenId={setOpenFilter} />
         <FilterDropdown label="Tipo de vehículo" options={vehicles} selected={vehicle_sel} onToggle={toggleIn(setVehicleSel)} onRemove={toggleIn(setVehicleSel)} openId={openFilter} setOpenId={setOpenFilter} />
         <FilterDropdown label="Tamaño" options={sizes} selected={sizes_sel} onToggle={toggleIn(setSizesSel)} onRemove={toggleIn(setSizesSel)} openId={openFilter} setOpenId={setOpenFilter} />
         <FilterDropdown label="Marca del caucho" options={brands} selected={brands_sel} onToggle={toggleIn(setBrandsSel)} onRemove={toggleIn(setBrandsSel)} openId={openFilter} setOpenId={setOpenFilter} />
