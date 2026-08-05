@@ -1147,12 +1147,76 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
   const [photoTarget, setPhotoTarget] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+  const [priceMin, setPriceMin] = useState("");
+  const [priceMax, setPriceMax] = useState("");
 
-  const visible = products.filter((p) => {
-    if (!query.trim()) return true;
-    const q = query.toLowerCase();
-    return [p.code, p.name, p.diameter, p.logo, p.color].some((f) => (f || "").toLowerCase().includes(q));
-  });
+  const COLUMN_DEFS = {
+    photo: { label: "Foto", sortable: false },
+    code: { label: "CÓDIGO", sortable: true },
+    diameter: { label: "Diameter", sortable: true },
+    name: { label: "Name", sortable: true },
+    logo: { label: "Logo", sortable: true },
+    color: { label: "Color", sortable: true },
+    complete: { label: "Complete Name", sortable: true },
+    price: { label: "Price", sortable: true },
+    qty: { label: "Stock disponible", sortable: true },
+    photos: { label: "Fotos", sortable: false },
+  };
+  const [columnOrder, setColumnOrder] = useState(["photo","code","diameter","name","logo","color","complete","price","qty","photos"]);
+  const [dragCol, setDragCol] = useState(null);
+  const onColDragStart = (id) => (e) => { setDragCol(id); e.dataTransfer.effectAllowed = "move"; };
+  const onColDragOver = (e) => e.preventDefault();
+  const onColDrop = (targetId) => () => {
+    if (!dragCol || dragCol === targetId) return;
+    setColumnOrder((prev) => {
+      const next = prev.filter((c) => c !== dragCol);
+      const idx = next.indexOf(targetId);
+      next.splice(idx, 0, dragCol);
+      return next;
+    });
+    setDragCol(null);
+  };
+
+  const toggleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const completeName = (p) => [p.code, p.diameter, p.name, p.logo, p.color].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+
+  const visible = useMemo(() => {
+    let list = products.filter((p) => {
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      return [p.code, p.name, p.diameter, p.logo, p.color].some((f) => (f || "").toLowerCase().includes(q));
+    });
+    if (priceMin !== "") list = list.filter((p) => (overrides[p.id]?.price ?? p.price) >= parseFloat(priceMin));
+    if (priceMax !== "") list = list.filter((p) => (overrides[p.id]?.price ?? p.price) <= parseFloat(priceMax));
+    if (sortKey) {
+      list = [...list].sort((a, b) => {
+        let va, vb;
+        if (sortKey === "price" || sortKey === "qty") {
+          va = sortKey === "price" ? (overrides[a.id]?.price ?? a.price) : (overrides[a.id]?.qty ?? a.qty);
+          vb = sortKey === "price" ? (overrides[b.id]?.price ?? b.price) : (overrides[b.id]?.qty ?? b.qty);
+        } else if (sortKey === "complete") {
+          va = completeName(a).toLowerCase(); vb = completeName(b).toLowerCase();
+        } else {
+          va = (a[sortKey] || "").toString().toLowerCase();
+          vb = (b[sortKey] || "").toString().toLowerCase();
+        }
+        if (va < vb) return sortDir === "asc" ? -1 : 1;
+        if (va > vb) return sortDir === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+    return list;
+  }, [products, query, sortKey, sortDir, overrides, priceMin, priceMax]);
 
   const updateOverride = (id, patch) => {
     setOverrides((prev) => {
@@ -1161,8 +1225,6 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
       return { ...prev, [id]: nextForId };
     });
   };
-
-  const completeName = (p) => [p.code, p.diameter, p.name, p.logo, p.color].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 
   const exportNuevos = () => {
     const rows = [["Código","Diameter","Name","Logo","Color","Price","Quantity"]];
@@ -1184,6 +1246,16 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar producto..."
             style={{ width: "100%", background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "8px 10px 8px 30px", color: "#f3f1ec", fontSize: 13 }} />
         </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input type="number" step="0.01" value={priceMin} onChange={(e) => setPriceMin(e.target.value)} placeholder="Precio mín."
+            style={{ width: 90, background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "8px 10px", color: "#f3f1ec", fontSize: 12.5 }} />
+          <span style={{ color: "#7a7974", fontSize: 12 }}>—</span>
+          <input type="number" step="0.01" value={priceMax} onChange={(e) => setPriceMax(e.target.value)} placeholder="Precio máx."
+            style={{ width: 90, background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "8px 10px", color: "#f3f1ec", fontSize: 12.5 }} />
+          {(priceMin !== "" || priceMax !== "") && (
+            <button onClick={() => { setPriceMin(""); setPriceMax(""); }} style={{ background: "none", border: "none", color: "#7a7974" }} title="Limpiar filtro de precio"><X size={14} /></button>
+          )}
+        </div>
         <button onClick={() => setShowNew(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: "#e2823c", border: "none", color: "#0c0c0d", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 700 }}>
           <Plus size={14} /> Nuevo producto
         </button>
@@ -1199,50 +1271,87 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
         <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 980 }}>
           <thead>
             <tr>
-              <th style={th}>Foto</th>
-              <th style={th}>CÓDIGO</th>
-              <th style={th}>Diameter</th>
-              <th style={th}>Name</th>
-              <th style={th}>Logo</th>
-              <th style={th}>Color</th>
-              <th style={{ ...th, minWidth: 260 }}>Complete Name</th>
-              <th style={th}>Price</th>
-              <th style={th}>Stock disponible</th>
-              <th style={th}>Fotos</th>
+              {columnOrder.map((colId) => {
+                const def = COLUMN_DEFS[colId];
+                const isComplete = colId === "complete";
+                return (
+                  <th key={colId}
+                    draggable
+                    onDragStart={onColDragStart(colId)}
+                    onDragOver={onColDragOver}
+                    onDrop={onColDrop(colId)}
+                    onClick={def.sortable ? () => toggleSort(colId) : undefined}
+                    style={{
+                      ...th,
+                      ...(isComplete ? { minWidth: 260 } : {}),
+                      cursor: def.sortable ? "pointer" : "grab",
+                      userSelect: "none",
+                      opacity: dragCol === colId ? 0.4 : 1,
+                    }}
+                    title="Arrastra para reordenar columnas"
+                  >
+                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      {def.label}
+                      {def.sortable && (sortKey === colId ? (sortDir === "asc" ? <ChevronDown size={11} style={{ transform: "rotate(180deg)" }} /> : <ChevronDown size={11} />) : <ChevronDown size={11} style={{ opacity: 0.25 }} />)}
+                    </span>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
             {visible.map((p) => {
               const ov = overrides[p.id] || {};
               const photos = ov.photos || [];
+              const cellFor = (colId) => {
+                switch (colId) {
+                  case "photo":
+                    return (
+                      <div style={{ width: 32, height: 32, borderRadius: 5, overflow: "hidden", background: "#0f0f10", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {photos[0] ? <img src={photos[0]} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <TirePlaceholder size={18} />}
+                      </div>
+                    );
+                  case "code":
+                    return <span style={{ fontWeight: 700, color: "#e2823c" }}>{p.code}{p.isNew && <span style={{ color: "#3fae6a", fontSize: 9.5, marginLeft: 4 }}>nuevo</span>}</span>;
+                  case "diameter":
+                    return p.diameter;
+                  case "name":
+                    return p.name;
+                  case "logo":
+                    return p.logo;
+                  case "color":
+                    return p.color;
+                  case "complete":
+                    return <span style={{ color: "#b5b3ad", fontSize: 12 }}>{completeName(p)}</span>;
+                  case "price":
+                    return (
+                      <input type="number" step="0.01" value={ov.price ?? p.price}
+                        onChange={(e) => updateOverride(p.id, { price: parseFloat(e.target.value) || 0 })}
+                        style={{ width: 64, background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 6, padding: "4px 6px", color: "#f3f1ec", fontSize: 12 }} />
+                    );
+                  case "qty":
+                    return (
+                      <input type="number" value={ov.qty ?? p.qty} title="Corrige aquí el stock disponible"
+                        onChange={(e) => updateOverride(p.id, { qty: parseInt(e.target.value) || 0 })}
+                        style={{ width: 54, background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 6, padding: "4px 6px", color: "#f3f1ec", fontSize: 12 }} />
+                    );
+                  case "photos":
+                    return (
+                      <button onClick={() => setPhotoTarget(p)} style={{ background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 6, padding: "5px 8px", fontSize: 11.5, display: "flex", alignItems: "center", gap: 4 }}>
+                        <Upload size={12} /> {photos.length || 0}
+                      </button>
+                    );
+                  default:
+                    return null;
+                }
+              };
               return (
                 <tr key={p.id}>
-                  <td style={td}>
-                    <div style={{ width: 32, height: 32, borderRadius: 5, overflow: "hidden", background: "#0f0f10", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      {photos[0] ? <img src={photos[0]} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <TirePlaceholder size={18} />}
-                    </div>
-                  </td>
-                  <td style={{ ...td, fontWeight: 700, color: "#e2823c" }}>{p.code}{p.isNew && <span style={{ color: "#3fae6a", fontSize: 9.5, marginLeft: 4 }}>nuevo</span>}</td>
-                  <td style={td}>{p.diameter}</td>
-                  <td style={{ ...td, whiteSpace: "normal", minWidth: 160 }}>{p.name}</td>
-                  <td style={td}>{p.logo}</td>
-                  <td style={td}>{p.color}</td>
-                  <td style={{ ...td, whiteSpace: "normal", color: "#b5b3ad", fontSize: 12 }}>{completeName(p)}</td>
-                  <td style={td}>
-                    <input type="number" step="0.01" value={ov.price ?? p.price}
-                      onChange={(e) => updateOverride(p.id, { price: parseFloat(e.target.value) || 0 })}
-                      style={{ width: 64, background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 6, padding: "4px 6px", color: "#f3f1ec", fontSize: 12 }} />
-                  </td>
-                  <td style={td}>
-                    <input type="number" value={ov.qty ?? p.qty} title="Corrige aquí el stock disponible"
-                      onChange={(e) => updateOverride(p.id, { qty: parseInt(e.target.value) || 0 })}
-                      style={{ width: 54, background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 6, padding: "4px 6px", color: "#f3f1ec", fontSize: 12 }} />
-                  </td>
-                  <td style={td}>
-                    <button onClick={() => setPhotoTarget(p)} style={{ background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 6, padding: "5px 8px", fontSize: 11.5, display: "flex", alignItems: "center", gap: 4 }}>
-                      <Upload size={12} /> {photos.length || 0}
-                    </button>
-                  </td>
+                  {columnOrder.map((colId) => (
+                    <td key={colId} style={{ ...td, ...(colId === "name" || colId === "complete" ? { whiteSpace: "normal", minWidth: colId === "complete" ? 260 : 160 } : {}) }}>
+                      {cellFor(colId)}
+                    </td>
+                  ))}
                 </tr>
               );
             })}
