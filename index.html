@@ -1332,7 +1332,7 @@ function ProductPhotosModal({ product, photos, onClose, onSave }) {
   const [list, setList] = useState(normPhotos(photos));
   const [pasteFlash, setPasteFlash] = useState(false);
   const [cropIndex, setCropIndex] = useState(null);
-  const MAXP = 7;
+  const MAXP = 15;
   const fileRef = useRef(null);
   const cameraRef = useRef(null);
   const listRef = useRef(list);
@@ -1341,8 +1341,17 @@ function ProductPhotosModal({ product, photos, onClose, onSave }) {
   const handleFiles = async (files) => {
     const arr = Array.from(files).slice(0, MAXP - listRef.current.length);
     if (arr.length === 0) return;
-    const resized = await Promise.all(arr.map((f) => resizeImage(f, 650, 0.6)));
+    const resized = await Promise.all(arr.map((f) => resizeImage(f, 480, 0.5)));
     setList((l) => [...l, ...resized.map((img) => ({ img, available: true }))]);
+  };
+
+  const handleSave = () => {
+    const totalBytes = list.reduce((s, p) => s + (p.img ? p.img.length : 0), 0);
+    if (totalBytes > 900000) {
+      alert("Estas fotos ocupan demasiado espacio para guardarse juntas (límite técnico de Firebase). Quita alguna foto o vuelve a agregar menos por ahora.");
+      return;
+    }
+    onSave(list);
   };
 
   useEffect(() => {
@@ -1423,7 +1432,7 @@ function ProductPhotosModal({ product, photos, onClose, onSave }) {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "10px", fontSize: 13 }}>Cancelar</button>
-          <button onClick={() => onSave(list)} style={{ flex: 1, background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "10px", fontSize: 13 }}>Guardar fotos</button>
+          <button onClick={handleSave} style={{ flex: 1, background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "10px", fontSize: 13 }}>Guardar fotos</button>
         </div>
       </div>
       {cropIndex !== null && (
