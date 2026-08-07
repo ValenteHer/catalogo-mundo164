@@ -81,6 +81,14 @@ async function fbDeleteDoc(colName, id) {
   catch (e) { console.error("delete doc error", colName, id, e); }
 }
 
+function normPhoto(p) {
+  if (typeof p === "string") return { img: p, available: true };
+  return { img: p.img, available: p.available !== false };
+}
+function normPhotos(list) {
+  return (list || []).map(normPhoto);
+}
+
 function resizeImage(file, maxDim = 900, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -431,10 +439,19 @@ function Header({ view, setView, cartCount, onOpenCart, isAdmin, logo, wishlistC
 
 /* ---------------- Product Card ---------------- */
 
-function ProductCard({ product, photos, cartQty, onAdd, onRemove, isWishlisted, onToggleWishlist }) {
-  const [photoIdx, setPhotoIdx] = useState(0);
-  const hasPhotos = photos && photos.length > 0;
+function ProductCard({ product, photos, cart, onAdd, onRemove, isWishlisted, onToggleWishlist }) {
+  const normed = normPhotos(photos);
+  const hasPhotos = normed.length > 0;
+  const firstAvailableIdx = normed.findIndex((p) => p.available);
+  const [selIdx, setSelIdx] = useState(firstAvailableIdx >= 0 ? firstAvailableIdx : 0);
   const tags = [product.diameter, product.color, product.logo].filter((t) => t && t.toUpperCase() !== "NA");
+
+  const variantIdx = hasPhotos ? selIdx : -1;
+  const cartKey = `${product.id}::${variantIdx}`;
+  const cartQty = (cart[cartKey] && cart[cartKey].qty) || 0;
+  const selectedVariant = hasPhotos ? normed[selIdx] : null;
+  const variantOut = selectedVariant && !selectedVariant.available;
+  const canOrder = product.qty > 0 && !variantOut;
 
   return (
     <div className="m164-in" style={{
@@ -444,26 +461,12 @@ function ProductCard({ product, photos, cartQty, onAdd, onRemove, isWishlisted, 
     }}>
       <div style={{ position: "relative", aspectRatio: "1.2", background: "#0f0f10", display: "flex", alignItems: "center", justifyContent: "center" }}>
         {hasPhotos ? (
-          <img src={photos[photoIdx]} alt={product.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img src={selectedVariant.img} alt={product.name} style={{ width: "100%", height: "100%", objectFit: "cover", opacity: variantOut ? 0.4 : 1 }} />
         ) : (
           <TirePlaceholder size={54} />
         )}
-        {hasPhotos && photos.length > 1 && (
-          <>
-            <button onClick={() => setPhotoIdx((i) => (i - 1 + photos.length) % photos.length)}
-              style={{ position: "absolute", left: 4, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.55)", border: "none", borderRadius: 999, width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
-              <ChevronLeft size={14} />
-            </button>
-            <button onClick={() => setPhotoIdx((i) => (i + 1) % photos.length)}
-              style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.55)", border: "none", borderRadius: 999, width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
-              <ChevronRight size={14} />
-            </button>
-            <div style={{ position: "absolute", bottom: 6, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 3 }}>
-              {photos.map((_, i) => (
-                <div key={i} style={{ width: 5, height: 5, borderRadius: 999, background: i === photoIdx ? "#e2823c" : "rgba(255,255,255,0.35)" }} />
-              ))}
-            </div>
-          </>
+        {variantOut && (
+          <span style={{ position: "absolute", background: "rgba(217,83,79,0.9)", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6 }}>Modelo agotado</span>
         )}
         <div style={{ position: "absolute", top: 8, left: 8, display: "flex", alignItems: "center", gap: 4 }}>
           <span style={{ background: "rgba(0,0,0,0.6)", color: "#e2823c", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 6, letterSpacing: "0.03em" }}>
@@ -480,6 +483,20 @@ function ProductCard({ product, photos, cartQty, onAdd, onRemove, isWishlisted, 
           <Heart size={15} filled={isWishlisted} color={isWishlisted ? "#e2536b" : "#fff"} />
         </button>
       </div>
+      {normed.length > 1 && (
+        <div className="m164-scrollbar" style={{ display: "flex", gap: 4, padding: "6px 6px 0", overflowX: "auto" }}>
+          {normed.map((p, i) => (
+            <button key={i} onClick={() => setSelIdx(i)}
+              style={{
+                position: "relative", width: 28, height: 28, borderRadius: 6, overflow: "hidden", flexShrink: 0,
+                border: i === selIdx ? "2px solid #e2823c" : "1px solid #2a2a2e", padding: 0, background: "#0f0f10",
+              }}>
+              <img src={p.img} style={{ width: "100%", height: "100%", objectFit: "cover", opacity: p.available ? 1 : 0.35 }} />
+              {!p.available && <div style={{ position: "absolute", inset: 0, background: "rgba(217,83,79,0.35)" }} />}
+            </button>
+          ))}
+        </div>
+      )}
       <div style={{ padding: "10px 12px 12px", display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
         <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.25, minHeight: 34 }}>{product.name || "Sin nombre"}</div>
         {tags.length > 0 && (
@@ -491,16 +508,16 @@ function ProductCard({ product, photos, cartQty, onAdd, onRemove, isWishlisted, 
         )}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto", paddingTop: 6 }}>
           <div className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#e2823c" }}>{money(product.price)}</div>
-          {product.qty <= 0 ? (
+          {!canOrder ? (
             <span style={{ fontSize: 11, color: "#7a7974", fontWeight: 600, padding: "6px 4px" }}>Sin stock</span>
           ) : cartQty > 0 ? (
             <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#1f1f22", borderRadius: 8, padding: "3px 6px" }}>
-              <button onClick={onRemove} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" }}><Minus size={13} /></button>
+              <button onClick={() => onRemove(cartKey)} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" }}><Minus size={13} /></button>
               <span style={{ fontSize: 13, fontWeight: 700, minWidth: 16, textAlign: "center" }}>{cartQty}</span>
-              <button onClick={onAdd} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={13} /></button>
+              <button onClick={() => onAdd(product.id, variantIdx, selectedVariant ? selectedVariant.img : null)} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={13} /></button>
             </div>
           ) : (
-            <button onClick={onAdd} style={{ background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, fontSize: 12.5, borderRadius: 8, padding: "6px 12px", display: "flex", alignItems: "center", gap: 5 }}>
+            <button onClick={() => onAdd(product.id, variantIdx, selectedVariant ? selectedVariant.img : null)} style={{ background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, fontSize: 12.5, borderRadius: 8, padding: "6px 12px", display: "flex", alignItems: "center", gap: 5 }}>
               <Plus size={13} /> Agregar
             </button>
           )}
@@ -516,7 +533,9 @@ function CartDrawer({ open, onClose, cart, products, onQty, onSend, whatsappNumb
   const [selectedNumber, setSelectedNumber] = useState(null);
   const [touched, setTouched] = useState(false);
   if (!open) return null;
-  const items = Object.entries(cart).map(([id, qty]) => ({ product: products.find((p) => p.id === id), qty })).filter((i) => i.product && i.qty > 0);
+  const items = Object.entries(cart).map(([key, entry]) => ({
+    key, product: products.find((p) => p.id === entry.productId), qty: entry.qty, variantImg: entry.variantImg,
+  })).filter((i) => i.product && i.qty > 0);
   const total = items.reduce((s, i) => s + i.product.price * i.qty, 0);
 
   const nums = (whatsappNumbers || []).filter((n) => n && n.number);
@@ -555,17 +574,22 @@ function CartDrawer({ open, onClose, cart, products, onQty, onSend, whatsappNumb
               Todavía no agregaste productos.
             </div>
           )}
-          {items.map(({ product, qty }) => (
-            <div key={product.id} style={{ display: "flex", gap: 10, alignItems: "center", paddingBottom: 10, borderBottom: "1px solid #202023" }}>
+          {items.map(({ key, product, qty, variantImg }) => (
+            <div key={key} style={{ display: "flex", gap: 10, alignItems: "center", paddingBottom: 10, borderBottom: "1px solid #202023" }}>
+              {variantImg && (
+                <div style={{ width: 38, height: 38, borderRadius: 6, overflow: "hidden", background: "#0f0f10", flexShrink: 0 }}>
+                  <img src={variantImg} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                </div>
+              )}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: "#e2823c" }}>{product.code}</div>
                 <div style={{ fontSize: 13, lineHeight: 1.25 }}>{product.name}</div>
                 <div style={{ fontSize: 11.5, color: "#8a8983" }}>{[product.diameter, product.color].filter(t=>t&&t.toUpperCase()!=="NA").join(" · ")}</div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#1f1f22", borderRadius: 8, padding: "3px 6px" }}>
-                <button onClick={() => onQty(product.id, qty - 1)} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22 }}><Minus size={12} /></button>
+                <button onClick={() => onQty(key, qty - 1)} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22 }}><Minus size={12} /></button>
                 <span style={{ fontSize: 13, fontWeight: 700, minWidth: 16, textAlign: "center" }}>{qty}</span>
-                <button onClick={() => onQty(product.id, qty + 1)} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22 }}><Plus size={12} /></button>
+                <button onClick={() => onQty(key, qty + 1)} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22 }}><Plus size={12} /></button>
               </div>
               <div style={{ fontSize: 13, fontWeight: 700, minWidth: 54, textAlign: "right" }}>{money(product.price * qty)}</div>
             </div>
@@ -642,7 +666,8 @@ function WishlistDrawer({ open, onClose, wishlist, products, overrides, onRemove
             </div>
           )}
           {items.map((product) => {
-            const photo = (overrides[product.id] && overrides[product.id].photos && overrides[product.id].photos[0]) || null;
+            const photoObj = (overrides[product.id] && overrides[product.id].photos && normPhotos(overrides[product.id].photos)[0]) || null;
+            const photo = photoObj ? photoObj.img : null;
             return (
               <div key={product.id} style={{ display: "flex", gap: 10, alignItems: "center", paddingBottom: 10, borderBottom: "1px solid #202023" }}>
                 <div style={{ width: 44, height: 44, borderRadius: 8, overflow: "hidden", background: "#0f0f10", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -850,19 +875,26 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsappNumbers, on
     });
   }, [products, query, sizes_sel, colors_sel, brands_sel, vehicle_sel, avail_sel, priceRange]);
 
-  const cartCount = Object.values(cart).reduce((s, v) => s + v, 0);
+  const cartCount = Object.values(cart).reduce((s, v) => s + v.qty, 0);
 
   const toggleWishlist = (id) => setWishlist((w) => w.includes(id) ? w.filter((x) => x !== id) : [...w, id]);
 
-  const addOne = (id) => setCart((c) => ({ ...c, [id]: (c[id] || 0) + 1 }));
-  const removeOne = (id) => setCart((c) => {
-    const next = { ...c, [id]: Math.max(0, (c[id] || 0) - 1) };
-    if (next[id] === 0) delete next[id];
+  const addOne = (productId, variantIdx, variantImg) => setCart((c) => {
+    const key = `${productId}::${variantIdx}`;
+    const existing = c[key];
+    return { ...c, [key]: { productId, variantIdx, variantImg, qty: (existing ? existing.qty : 0) + 1 } };
+  });
+  const removeOne = (key) => setCart((c) => {
+    const existing = c[key];
+    if (!existing) return c;
+    const nextQty = Math.max(0, existing.qty - 1);
+    const next = { ...c };
+    if (nextQty === 0) delete next[key]; else next[key] = { ...existing, qty: nextQty };
     return next;
   });
-  const setQty = (id, qty) => setCart((c) => {
+  const setQty = (key, qty) => setCart((c) => {
     const next = { ...c };
-    if (qty <= 0) delete next[id]; else next[id] = qty;
+    if (qty <= 0 || !next[key]) delete next[key]; else next[key] = { ...next[key], qty };
     return next;
   });
 
@@ -896,7 +928,7 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsappNumbers, on
             {visible.map((p) => (
               <ProductCard
                 key={p.id} product={p} photos={(overrides[p.id] && overrides[p.id].photos) || []}
-                cartQty={cart[p.id] || 0} onAdd={() => addOne(p.id)} onRemove={() => removeOne(p.id)}
+                cart={cart} onAdd={addOne} onRemove={removeOne}
                 isWishlisted={wishlist.includes(p.id)} onToggleWishlist={() => toggleWishlist(p.id)}
               />
             ))}
@@ -1016,7 +1048,8 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid #202023", borderBottom: "1px solid #202023", padding: "8px 0", marginBottom: 8 }}>
         {o.items.map((it, i) => {
-          const photo = (overrides[it.id] && overrides[it.id].photos && overrides[it.id].photos[0]) || null;
+          const fallback = (overrides[it.id] && overrides[it.id].photos && normPhotos(overrides[it.id].photos)[0]) || null;
+          const photo = it.variantImg || (fallback ? fallback.img : null);
           return (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#c9c8c3" }}>
               <div style={{ width: 26, height: 26, borderRadius: 5, overflow: "hidden", background: "#0f0f10", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1080,16 +1113,48 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
         style={{ width: "100%", marginTop: 6, background: "#1f1f22", border: `1px solid ${color}`, color, borderRadius: 6, padding: "5px 6px", fontSize: 11, fontWeight: 600 }}>
         {ORDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
       </select>
+      {o.stockDeducted && (
+        <div style={{ fontSize: 10, color: "#3fae6a", marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
+          <Check size={10} /> Stock descontado
+        </div>
+      )}
     </div>
   );
 }
 
-function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides }) {
+function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, setOverrides }) {
   const [dragId, setDragId] = useState(null);
+
+  const adjustStock = (order, sign) => {
+    // sign: -1 para descontar (al pagar), +1 para devolver (si se revierte de Pagado)
+    setOverrides((prev) => {
+      const next = { ...prev };
+      order.items.forEach((it) => {
+        const currentOv = next[it.id] || {};
+        const currentQty = currentOv.qty ?? (SEED_PRODUCTS.find((p) => p.id === it.id)?.qty ?? 0);
+        const newQty = Math.max(0, currentQty + sign * it.qty);
+        const newOv = { ...currentOv, qty: newQty };
+        next[it.id] = newOv;
+        fbSaveDoc("overrides", it.id, newOv);
+      });
+      return next;
+    });
+  };
 
   const updateOrder = (id, patch) => {
     setOrders((prev) => {
-      const next = prev.map((o) => o.id === id ? { ...o, ...patch } : o);
+      const current = prev.find((o) => o.id === id);
+      let finalPatch = patch;
+      if (current && patch.status && patch.status !== current.status) {
+        if (patch.status === "Pagado" && !current.stockDeducted) {
+          adjustStock(current, -1);
+          finalPatch = { ...patch, stockDeducted: true };
+        } else if (current.status === "Pagado" && patch.status !== "Pagado" && current.stockDeducted) {
+          adjustStock(current, 1);
+          finalPatch = { ...patch, stockDeducted: false };
+        }
+      }
+      const next = prev.map((o) => o.id === id ? { ...o, ...finalPatch } : o);
       const updated = next.find((o) => o.id === id);
       if (updated) fbSaveDoc("orders", id, updated);
       return next;
@@ -1264,19 +1329,20 @@ function PhotoCropModal({ image, onClose, onApply }) {
 }
 
 function ProductPhotosModal({ product, photos, onClose, onSave }) {
-  const [list, setList] = useState(photos || []);
+  const [list, setList] = useState(normPhotos(photos));
   const [pasteFlash, setPasteFlash] = useState(false);
   const [cropIndex, setCropIndex] = useState(null);
+  const MAXP = 7;
   const fileRef = useRef(null);
   const cameraRef = useRef(null);
   const listRef = useRef(list);
   useEffect(() => { listRef.current = list; }, [list]);
 
   const handleFiles = async (files) => {
-    const arr = Array.from(files).slice(0, 4 - listRef.current.length);
+    const arr = Array.from(files).slice(0, MAXP - listRef.current.length);
     if (arr.length === 0) return;
     const resized = await Promise.all(arr.map((f) => resizeImage(f, 650, 0.6)));
-    setList((l) => [...l, ...resized]);
+    setList((l) => [...l, ...resized.map((img) => ({ img, available: true }))]);
   };
 
   useEffect(() => {
@@ -1301,17 +1367,27 @@ function ProductPhotosModal({ product, photos, onClose, onSave }) {
     return () => document.removeEventListener("paste", onPaste);
   }, []);
 
+  const toggleAvailable = (i) => setList((l) => l.map((p, j) => j === i ? { ...p, available: !p.available } : p));
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ background: "#141415", border: pasteFlash ? "1px solid #3fae6a" : "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(480px,100%)", maxHeight: "85vh", overflowY: "auto", transition: "border-color 0.2s" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div style={{ background: "#141415", border: pasteFlash ? "1px solid #3fae6a" : "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(520px,100%)", maxHeight: "85vh", overflowY: "auto", transition: "border-color 0.2s" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
           <div className="disp" style={{ fontSize: 15, fontWeight: 700 }}>Fotos — {product.code}</div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#9a9994" }}><X size={18} /></button>
+        </div>
+        <div style={{ fontSize: 11.5, color: "#6a94c9", marginBottom: 12 }}>
+          Si el producto tiene varios modelos/diseños, sube una foto por cada uno — el cliente podrá elegir cuál quiere, y puedes marcar cada modelo como agotado por separado.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
           {list.map((p, i) => (
             <div key={i} style={{ position: "relative", aspectRatio: "1", borderRadius: 8, overflow: "hidden", background: "#0f0f10" }}>
-              <img src={p} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <img src={p.img} style={{ width: "100%", height: "100%", objectFit: "cover", opacity: p.available ? 1 : 0.35 }} />
+              {!p.available && (
+                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ background: "rgba(217,83,79,0.9)", color: "#fff", fontSize: 9.5, fontWeight: 700, padding: "2px 6px", borderRadius: 5 }}>AGOTADO</span>
+                </div>
+              )}
               <button onClick={() => setCropIndex(i)} title="Recortar"
                 style={{ position: "absolute", bottom: 3, left: 3, background: "rgba(0,0,0,0.7)", border: "none", borderRadius: 999, width: 20, height: 20, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Crop size={11} />
@@ -1320,9 +1396,13 @@ function ProductPhotosModal({ product, photos, onClose, onSave }) {
                 style={{ position: "absolute", top: 3, right: 3, background: "rgba(0,0,0,0.7)", border: "none", borderRadius: 999, width: 20, height: 20, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <X size={12} />
               </button>
+              <button onClick={() => toggleAvailable(i)} title={p.available ? "Marcar agotado" : "Marcar disponible"}
+                style={{ position: "absolute", bottom: 3, right: 3, background: p.available ? "rgba(63,174,106,0.85)" : "rgba(217,83,79,0.85)", border: "none", borderRadius: 999, width: 20, height: 20, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {p.available ? <Check size={11} /> : <X size={11} />}
+              </button>
             </div>
           ))}
-          {list.length < 4 && (
+          {list.length < MAXP && (
             <>
               <button onClick={() => cameraRef.current.click()} style={{ aspectRatio: "1", borderRadius: 8, border: "1.5px dashed #3a3a3e", background: "transparent", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, color: "#7a7974" }}>
                 <Camera size={18} />
@@ -1337,7 +1417,7 @@ function ProductPhotosModal({ product, photos, onClose, onSave }) {
         </div>
         <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
         <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
-        <div style={{ fontSize: 11.5, color: "#7a7974", marginBottom: 6 }}>Hasta 4 fotos por producto. Se optimizan automáticamente para que carguen rápido.</div>
+        <div style={{ fontSize: 11.5, color: "#7a7974", marginBottom: 6 }}>Hasta {MAXP} fotos por producto. El botón verde/rojo en cada foto marca ese modelo como disponible o agotado.</div>
         <div style={{ fontSize: 11.5, color: pasteFlash ? "#3fae6a" : "#6a94c9", marginBottom: 14, display: "flex", alignItems: "center", gap: 6, transition: "color 0.2s" }}>
           {pasteFlash ? <><Check size={13} /> ¡Foto pegada!</> : <>💡 Tip: copia una imagen (Ctrl+C) y pégala aquí con Ctrl+V</>}
         </div>
@@ -1347,8 +1427,8 @@ function ProductPhotosModal({ product, photos, onClose, onSave }) {
         </div>
       </div>
       {cropIndex !== null && (
-        <PhotoCropModal image={list[cropIndex]} onClose={() => setCropIndex(null)}
-          onApply={(cropped) => { setList((l) => l.map((p, j) => j === cropIndex ? cropped : p)); setCropIndex(null); }} />
+        <PhotoCropModal image={list[cropIndex].img} onClose={() => setCropIndex(null)}
+          onApply={(cropped) => { setList((l) => l.map((p, j) => j === cropIndex ? { ...p, img: cropped } : p)); setCropIndex(null); }} />
       )}
     </div>
   );
@@ -1676,13 +1756,13 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
           <tbody>
             {visible.map((p) => {
               const ov = overrides[p.id] || {};
-              const photos = ov.photos || [];
+              const photos = normPhotos(ov.photos);
               const cellFor = (colId) => {
                 switch (colId) {
                   case "photo":
                     return (
                       <div style={{ width: 32, height: 32, borderRadius: 5, overflow: "hidden", background: "#0f0f10", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        {photos[0] ? <img src={photos[0]} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <TirePlaceholder size={18} />}
+                        {photos[0] ? <img src={photos[0].img} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <TirePlaceholder size={18} />}
                       </div>
                     );
                   case "code":
@@ -1894,7 +1974,7 @@ function AdminView({ setView, orders, setOrders, clientes, setClientes, products
             <LogOut size={13} /> Cerrar sesión
           </button>
         </div>
-        {tab === "pedidos" && <AdminPedidos orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes} overrides={overrides} />}
+        {tab === "pedidos" && <AdminPedidos orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes} overrides={overrides} setOverrides={setOverrides} />}
         {tab === "productos" && <AdminProductos products={products} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides} />}
         {tab === "wishlist" && <AdminWishlist wishlists={wishlists} setWishlists={setWishlists} />}
         {tab === "ajustes" && <AdminAjustes settings={settings} setSettings={setSettings} />}
@@ -2108,7 +2188,8 @@ function App() {
       ciudad: clientInfo.ciudad,
       total,
       paymentProofs: [],
-      items: items.map(({ product, qty }) => ({ id: product.id, code: product.code, diameter: product.diameter, name: product.name, logo: product.logo, color: product.color, price: product.price, qty })),
+      stockDeducted: false,
+      items: items.map(({ product, qty, variantImg }) => ({ id: product.id, code: product.code, diameter: product.diameter, name: product.name, logo: product.logo, color: product.color, price: product.price, qty, variantImg: variantImg || null })),
     };
     fbSaveDoc("orders", order.id, order);
     setOrders((prev) => [...prev, order]);
