@@ -1612,7 +1612,15 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
     visible: { label: "Mostrar", sortable: false },
     actions: { label: "Acciones", sortable: false },
   };
-  const [columnOrder, setColumnOrder] = useState(["photo","code","diameter","name","logo","color","complete","price","qty","photos","visible","actions"]);
+  const DEFAULT_COL_ORDER = ["photo","code","diameter","name","logo","color","complete","price","qty","photos","visible","actions"];
+  const [columnOrder, setColumnOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("m164_admin_colorder"));
+      if (Array.isArray(saved) && saved.length === DEFAULT_COL_ORDER.length && DEFAULT_COL_ORDER.every((c) => saved.includes(c))) return saved;
+    } catch (e) {}
+    return DEFAULT_COL_ORDER;
+  });
+  useEffect(() => { localStorage.setItem("m164_admin_colorder", JSON.stringify(columnOrder)); }, [columnOrder]);
   const [dragCol, setDragCol] = useState(null);
   const onColDragStart = (id) => (e) => { setDragCol(id); e.dataTransfer.effectAllowed = "move"; };
   const onColDragOver = (e) => e.preventDefault();
