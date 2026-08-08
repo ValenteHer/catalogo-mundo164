@@ -362,18 +362,18 @@ function Header({ view, setView, cartCount, onOpenCart, isAdmin, logo, wishlistC
     }}>
       <div style={{ height: 3 }} className="tread" />
       <div style={{
-        maxWidth: 1100, margin: "0 auto", padding: "10px 16px",
-        display: "flex", alignItems: "center", gap: 12,
+        maxWidth: 1100, margin: "0 auto", padding: "14px 16px",
+        display: "flex", alignItems: "center", gap: 14,
       }}>
         <div style={{
-          width: 42, height: 42, borderRadius: "50%", background: "#000",
-          border: "2px solid #e2823c", display: "flex", alignItems: "center",
+          width: 84, height: 84, borderRadius: "50%", background: "#000",
+          border: "3px solid #e2823c", display: "flex", alignItems: "center",
           justifyContent: "center", flexShrink: 0, overflow: "hidden",
         }}>
           {logo ? (
             <img src={logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           ) : (
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+            <svg width="52" height="52" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="9" stroke="#e2823c" strokeWidth="1.6" />
               <circle cx="12" cy="12" r="9" stroke="#fff" strokeWidth="0.8" strokeDasharray="1.5 2.5" />
               <circle cx="12" cy="12" r="3.2" fill="#fff" />
@@ -381,10 +381,10 @@ function Header({ view, setView, cartCount, onOpenCart, isAdmin, logo, wishlistC
           )}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#e2823c", lineHeight: 1.05 }}>
+          <div className="disp" style={{ fontSize: 34, fontWeight: 700, color: "#e2823c", lineHeight: 1.05 }}>
             Mundo 1/64
           </div>
-          <div style={{ fontSize: 10.5, color: "#9a9994", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+          <div style={{ fontSize: 21, color: "#9a9994", letterSpacing: "0.08em", textTransform: "uppercase" }}>
             Ruedas y miniaturas
           </div>
         </div>
@@ -496,6 +496,11 @@ function ProductCard({ product, photos, cart, onAdd, onRemove, isWishlisted, onT
           {product.qty <= 0 && (
             <span style={{ background: "rgba(217,83,79,0.85)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6 }}>
               Agotado
+            </span>
+          )}
+          {product.qty > 0 && product.qty <= 2 && (
+            <span style={{ background: "rgba(226,179,75,0.9)", color: "#1a1400", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6 }}>
+              ¡Últimas {product.qty}!
             </span>
           )}
         </div>
@@ -839,6 +844,35 @@ function FilterDropdown({ label, options, selected, onToggle, onRemove, swatches
 
 }
 
+function WishlistInfoModal({ clientInfo, setClientInfo, onClose, onConfirm }) {
+  const [nombre, setNombre] = useState(clientInfo.nombre);
+  const [apellido, setApellido] = useState(clientInfo.apellido);
+  const [ciudad, setCiudad] = useState(clientInfo.ciudad);
+  const canSave = nombre.trim() && apellido.trim() && ciudad.trim();
+  const fieldStyle = { width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "9px 10px", color: "#f3f1ec", fontSize: 13.5, marginBottom: 10 };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 65, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#141415", border: "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(340px,100%)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <Heart size={17} filled color="#e2536b" />
+          <div className="disp" style={{ fontSize: 15, fontWeight: 700 }}>Antes de guardar tu favorito</div>
+        </div>
+        <div style={{ fontSize: 11.5, color: "#9a9994", marginBottom: 14 }}>Cuéntanos quién eres, así podemos identificar tus productos guardados.</div>
+        <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre" style={fieldStyle} />
+        <input value={apellido} onChange={(e) => setApellido(e.target.value)} placeholder="Apellido" style={fieldStyle} />
+        <input value={ciudad} onChange={(e) => setCiudad(e.target.value)} placeholder="Ciudad" style={{ ...fieldStyle, marginBottom: 16 }} />
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "10px", fontSize: 13 }}>Cancelar</button>
+          <button disabled={!canSave} onClick={() => { setClientInfo({ nombre, apellido, ciudad }); onConfirm(); }}
+            style={{ flex: 1, background: canSave ? "#e2823c" : "#3a3a3e", border: "none", color: canSave ? "#0c0c0d" : "#7a7974", fontWeight: 700, borderRadius: 8, padding: "10px", fontSize: 13 }}>
+            Guardar favorito
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FiguraSaleModal({ product, onClose, onConfirm }) {
   const [price, setPrice] = useState("");
   const [qty, setQty] = useState("1");
@@ -929,7 +963,16 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsappNumbers, on
 
   const cartCount = Object.values(cart).reduce((s, v) => s + v.qty, 0);
 
-  const toggleWishlist = (id) => setWishlist((w) => w.includes(id) ? w.filter((x) => x !== id) : [...w, id]);
+  const [pendingWishlistAdd, setPendingWishlistAdd] = useState(null);
+  const infoComplete = clientInfo.nombre.trim() && clientInfo.apellido.trim() && clientInfo.ciudad.trim();
+  const toggleWishlist = (id) => {
+    const isRemoving = wishlist.includes(id);
+    if (!isRemoving && wishlist.length === 0 && !infoComplete) {
+      setPendingWishlistAdd(id);
+      return;
+    }
+    setWishlist((w) => w.includes(id) ? w.filter((x) => x !== id) : [...w, id]);
+  };
 
   const addOne = (productId, variantIdx, variantImg) => setCart((c) => {
     const key = `${productId}::${variantIdx}`;
@@ -996,6 +1039,11 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsappNumbers, on
       {figuraTarget && (
         <FiguraSaleModal product={figuraTarget} onClose={() => setFiguraTarget(null)}
           onConfirm={(price, qty) => { onAdminDirectOrder(figuraTarget, price, qty); setFiguraTarget(null); }} />
+      )}
+      {pendingWishlistAdd && (
+        <WishlistInfoModal clientInfo={clientInfo} setClientInfo={setClientInfo}
+          onClose={() => setPendingWishlistAdd(null)}
+          onConfirm={() => { setWishlist((w) => [...w, pendingWishlistAdd]); setPendingWishlistAdd(null); }} />
       )}
     </>
   );
@@ -1179,7 +1227,7 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
   );
 }
 
-function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, setOverrides }) {
+function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, setOverrides, products }) {
   const [dragId, setDragId] = useState(null);
 
   const adjustStock = (order, sign) => {
@@ -1188,7 +1236,9 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, set
       const next = { ...prev };
       order.items.forEach((it) => {
         const currentOv = next[it.id] || {};
-        const currentQty = currentOv.qty ?? (SEED_PRODUCTS.find((p) => p.id === it.id)?.qty ?? 0);
+        const productMatch = products.find((p) => p.id === it.id);
+        const baseQty = productMatch ? productMatch.qty : 0;
+        const currentQty = numOr(currentOv.qty, baseQty);
         const newQty = Math.max(0, currentQty + sign * it.qty);
         const newOv = { ...currentOv, qty: newQty };
         next[it.id] = newOv;
@@ -2081,7 +2131,7 @@ function AdminView({ setView, orders, setOrders, clientes, setClientes, products
             <LogOut size={13} /> Cerrar sesión
           </button>
         </div>
-        {tab === "pedidos" && <AdminPedidos orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes} overrides={overrides} setOverrides={setOverrides} />}
+        {tab === "pedidos" && <AdminPedidos orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes} overrides={overrides} setOverrides={setOverrides} products={products} />}
         {tab === "productos" && <AdminProductos products={products} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides} />}
         {tab === "wishlist" && <AdminWishlist wishlists={wishlists} setWishlists={setWishlists} />}
         {tab === "ajustes" && <AdminAjustes settings={settings} setSettings={setSettings} />}
