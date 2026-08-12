@@ -325,6 +325,27 @@ function BrandStyles() {
       @keyframes m164fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
       .m164-in { animation: m164fade 0.25s ease both; }
       .tread { background-image: repeating-linear-gradient(90deg, #e2823c 0 10px, transparent 10px 20px); height: 3px; opacity: 0.55; }
+
+      .m164-header-inner { padding: 14px 16px; gap: 14px; }
+      .m164-header-logo { width: 84px; height: 84px; border: 3px solid #e2823c; }
+      .m164-header-title { font-size: 34px; }
+      .m164-header-subtitle { font-size: 21px; }
+      .m164-header-actions { gap: 10px; }
+      .m164-header-btn { padding: 9px 12px; font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+      @media (max-width: 640px) {
+        .m164-header-inner { padding: 9px 10px; gap: 8px; }
+        .m164-header-logo { width: 44px; height: 44px; border-width: 2px; }
+        .m164-header-title { font-size: 16px; }
+        .m164-header-subtitle { font-size: 8.5px; letter-spacing: 0.03em; }
+        .m164-header-actions { gap: 5px; }
+        .m164-header-btn { padding: 7px 8px; font-size: 11px; }
+        .m164-header-label { display: none; }
+      }
+      @media (max-width: 380px) {
+        .m164-header-logo { width: 36px; height: 36px; }
+        .m164-header-title { font-size: 14px; }
+        .m164-header-subtitle { display: none; }
+      }
     `}</style>
   );
 }
@@ -361,13 +382,13 @@ function Header({ view, setView, cartCount, onOpenCart, isAdmin, logo, wishlistC
       borderBottom: "1px solid #232326",
     }}>
       <div style={{ height: 3 }} className="tread" />
-      <div style={{
-        maxWidth: 1100, margin: "0 auto", padding: "14px 16px",
-        display: "flex", alignItems: "center", gap: 14,
+      <div className="m164-header-inner" style={{
+        maxWidth: isAdmin ? 1600 : 1100, margin: "0 auto",
+        display: "flex", alignItems: "center",
       }}>
-        <div style={{
-          width: 84, height: 84, borderRadius: "50%", background: "#000",
-          border: "3px solid #e2823c", display: "flex", alignItems: "center",
+        <div className="m164-header-logo" style={{
+          borderRadius: "50%", background: "#000",
+          display: "flex", alignItems: "center",
           justifyContent: "center", flexShrink: 0, overflow: "hidden",
         }}>
           {logo ? (
@@ -381,78 +402,84 @@ function Header({ view, setView, cartCount, onOpenCart, isAdmin, logo, wishlistC
           )}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="disp" style={{ fontSize: 34, fontWeight: 700, color: "#e2823c", lineHeight: 1.05 }}>
+          <div className="disp m164-header-title" style={{ fontWeight: 700, color: "#e2823c", lineHeight: 1.05 }}>
             Mundo 1/64
           </div>
-          <div style={{ fontSize: 21, color: "#9a9994", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+          <div className="m164-header-subtitle" style={{ color: "#9a9994", letterSpacing: "0.08em", textTransform: "uppercase" }}>
             Ruedas y miniaturas
           </div>
         </div>
-        {view === "client" && (
-          <button
-            onClick={onOpenMyOrders}
-            title="Mis pedidos"
-            style={{
-              background: "#1a1a1c", border: "1px solid #2c2c30",
-              color: "#f3f1ec", borderRadius: 10, padding: "9px", display: "flex", alignItems: "center",
-            }}
-          >
-            <ClipboardList size={17} />
-          </button>
-        )}
-        {view === "client" && (
-          <button
-            onClick={onOpenWishlist}
-            style={{
-              position: "relative", background: "#1a1a1c", border: "1px solid #2c2c30",
-              color: "#f3f1ec", borderRadius: 10, padding: "9px", display: "flex", alignItems: "center",
-            }}
-          >
-            <Heart size={17} filled={wishlistCount > 0} color={wishlistCount > 0 ? "#e2536b" : "#f3f1ec"} />
-            {wishlistCount > 0 && (
-              <span style={{
-                position: "absolute", top: -6, right: -6, background: "#e2823c", color: "#0c0c0d",
-                borderRadius: 999, fontSize: 11, fontWeight: 700, minWidth: 18, height: 18,
-                display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px",
-              }}>
-                {wishlistCount}
-              </span>
-            )}
-          </button>
-        )}
-        {view === "client" && (
-          <button
-            onClick={onOpenCart}
-            style={{
-              position: "relative", background: "#1a1a1c", border: "1px solid #2c2c30",
-              color: "#f3f1ec", borderRadius: 10, padding: "9px 14px",
-              display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 600,
-            }}
-          >
-            <ShoppingCart size={17} />
-            Pedido
-            {cartCount > 0 && (
-              <span style={{
-                position: "absolute", top: -6, right: -6, background: "#e2823c", color: "#0c0c0d",
-                borderRadius: 999, fontSize: 11, fontWeight: 700, minWidth: 18, height: 18,
-                display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px",
-              }}>
-                {cartCount}
-              </span>
-            )}
-          </button>
-        )}
-        {isAdmin && (
-          <button
-            onClick={() => setView(view === "admin" ? "client" : "admin")}
-            style={{
-              background: "transparent", border: "1px solid #2c2c30", color: "#9a9994",
-              borderRadius: 10, padding: "9px 12px", fontSize: 12.5, display: "flex", alignItems: "center", gap: 6,
-            }}
-          >
-            {view === "admin" ? <><ShoppingCart size={14} /> Ver catálogo</> : <><Settings size={14} /> Admin</>}
-          </button>
-        )}
+        <div className="m164-header-actions" style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+          {view === "client" && (
+            <button
+              className="m164-header-btn"
+              onClick={onOpenMyOrders}
+              title="Mis pedidos"
+              style={{
+                background: "#1a1a1c", border: "1px solid #2c2c30",
+                color: "#f3f1ec", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              <ClipboardList size={17} />
+            </button>
+          )}
+          {view === "client" && (
+            <button
+              className="m164-header-btn"
+              onClick={onOpenWishlist}
+              style={{
+                position: "relative", background: "#1a1a1c", border: "1px solid #2c2c30",
+                color: "#f3f1ec", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              <Heart size={17} filled={wishlistCount > 0} color={wishlistCount > 0 ? "#e2536b" : "#f3f1ec"} />
+              {wishlistCount > 0 && (
+                <span style={{
+                  position: "absolute", top: -6, right: -6, background: "#e2823c", color: "#0c0c0d",
+                  borderRadius: 999, fontSize: 11, fontWeight: 700, minWidth: 18, height: 18,
+                  display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px",
+                }}>
+                  {wishlistCount}
+                </span>
+              )}
+            </button>
+          )}
+          {view === "client" && (
+            <button
+              className="m164-header-btn"
+              onClick={onOpenCart}
+              style={{
+                position: "relative", background: "#1a1a1c", border: "1px solid #2c2c30",
+                color: "#f3f1ec", borderRadius: 10,
+                display: "flex", alignItems: "center", gap: 8,
+              }}
+            >
+              <ShoppingCart size={17} />
+              <span className="m164-header-label">Pedido</span>
+              {cartCount > 0 && (
+                <span style={{
+                  position: "absolute", top: -6, right: -6, background: "#e2823c", color: "#0c0c0d",
+                  borderRadius: 999, fontSize: 11, fontWeight: 700, minWidth: 18, height: 18,
+                  display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px",
+                }}>
+                  {cartCount}
+                </span>
+              )}
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              className="m164-header-btn"
+              onClick={() => setView(view === "admin" ? "client" : "admin")}
+              style={{
+                background: "transparent", border: "1px solid #2c2c30", color: "#9a9994",
+                borderRadius: 10, display: "flex", alignItems: "center", gap: 6,
+              }}
+            >
+              {view === "admin" ? <><ShoppingCart size={14} /> <span className="m164-header-label">Ver catálogo</span></> : <><Settings size={14} /> <span className="m164-header-label">Admin</span></>}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -460,7 +487,7 @@ function Header({ view, setView, cartCount, onOpenCart, isAdmin, logo, wishlistC
 
 /* ---------------- Product Card ---------------- */
 
-function ProductCard({ product, photos, cart, onAdd, onRemove, isWishlisted, onToggleWishlist, onQuickSale }) {
+function ProductCard({ product, photos, cart, onAdd, onRemove, isWishlisted, onToggleWishlist, onQuickSale, isAdmin, onAdminForceAdd }) {
   if (product.adminOnly) {
     return (
       <div className="m164-in" style={{ background: "#1a1610", border: "1px solid #4a3a1f", borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -548,20 +575,36 @@ function ProductCard({ product, photos, cart, onAdd, onRemove, isWishlisted, onT
         )}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto", paddingTop: 6 }}>
           <div className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#e2823c" }}>{money(product.price)}</div>
-          {!canOrder ? (
-            <span style={{ fontSize: 11, color: "#7a7974", fontWeight: 600, padding: "6px 4px" }}>Sin stock</span>
-          ) : cartQty > 0 ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#1f1f22", borderRadius: 8, padding: "3px 6px" }}>
-              <button onClick={() => onRemove(cartKey)} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" }}><Minus size={13} /></button>
-              <span style={{ fontSize: 13, fontWeight: 700, minWidth: 16, textAlign: "center" }}>{cartQty}</span>
+          {canOrder ? (
+            cartQty > 0 ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#1f1f22", borderRadius: 8, padding: "3px 6px" }}>
+                <button onClick={() => onRemove(cartKey)} style={{ background: "none", border: "none", color: "#f3f1ec", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" }}><Minus size={13} /></button>
+                <span style={{ fontSize: 13, fontWeight: 700, minWidth: 16, textAlign: "center" }}>{cartQty}</span>
+                <button onClick={() => onAdd(product.id, variantIdx, selectedVariant ? selectedVariant.img : null)} disabled={atStockMax} title={atStockMax ? "Alcanzaste el stock disponible" : ""}
+                  style={{ background: "none", border: "none", color: atStockMax ? "#4a4a4d" : "#f3f1ec", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", cursor: atStockMax ? "not-allowed" : "pointer" }}><Plus size={13} /></button>
+              </div>
+            ) : (
               <button onClick={() => onAdd(product.id, variantIdx, selectedVariant ? selectedVariant.img : null)} disabled={atStockMax} title={atStockMax ? "Alcanzaste el stock disponible" : ""}
-                style={{ background: "none", border: "none", color: atStockMax ? "#4a4a4d" : "#f3f1ec", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", cursor: atStockMax ? "not-allowed" : "pointer" }}><Plus size={13} /></button>
-            </div>
+                style={{ background: atStockMax ? "#3a3a3e" : "#e2823c", border: "none", color: atStockMax ? "#7a7974" : "#0c0c0d", fontWeight: 700, fontSize: 12.5, borderRadius: 8, padding: "6px 12px", display: "flex", alignItems: "center", gap: 5, cursor: atStockMax ? "not-allowed" : "pointer" }}>
+                <Plus size={13} /> Agregar
+              </button>
+            )
+          ) : isAdmin && product.qty <= 0 ? (
+            cartQty > 0 ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#241a30", border: "1px solid #4a3566", borderRadius: 8, padding: "3px 6px" }}>
+                <button onClick={() => onRemove(cartKey)} style={{ background: "none", border: "none", color: "#c9b8e0", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" }}><Minus size={13} /></button>
+                <span style={{ fontSize: 13, fontWeight: 700, minWidth: 16, textAlign: "center", color: "#c9b8e0" }}>{cartQty}</span>
+                <button onClick={() => onAdminForceAdd(product.id, variantIdx, selectedVariant ? selectedVariant.img : null)} title="Agregar sin validar stock"
+                  style={{ background: "none", border: "none", color: "#c9b8e0", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={13} /></button>
+              </div>
+            ) : (
+              <button onClick={() => onAdminForceAdd(product.id, variantIdx, selectedVariant ? selectedVariant.img : null)} title="Agregar sin validar stock (pedidos antiguos)"
+                style={{ background: "#3a2a52", border: "1px solid #6a4a9a", color: "#c9b8e0", fontWeight: 700, fontSize: 11, borderRadius: 8, padding: "6px 10px", display: "flex", alignItems: "center", gap: 5 }}>
+                <Lock size={12} /> Agregar como admin
+              </button>
+            )
           ) : (
-            <button onClick={() => onAdd(product.id, variantIdx, selectedVariant ? selectedVariant.img : null)} disabled={atStockMax} title={atStockMax ? "Alcanzaste el stock disponible" : ""}
-              style={{ background: atStockMax ? "#3a3a3e" : "#e2823c", border: "none", color: atStockMax ? "#7a7974" : "#0c0c0d", fontWeight: 700, fontSize: 12.5, borderRadius: 8, padding: "6px 12px", display: "flex", alignItems: "center", gap: 5, cursor: atStockMax ? "not-allowed" : "pointer" }}>
-              <Plus size={13} /> Agregar
-            </button>
+            <span style={{ fontSize: 11, color: "#7a7974", fontWeight: 600, padding: "6px 4px" }}>Sin stock</span>
           )}
         </div>
       </div>
@@ -689,6 +732,18 @@ function CartDrawer({ open, onClose, cart, products, onQty, onSend, whatsappNumb
   );
 }
 
+function ImageLightbox({ src, onClose }) {
+  if (!src) return null;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <button onClick={onClose} title="Cerrar" style={{ position: "absolute", top: 16, right: 16, background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 999, width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
+        <X size={20} />
+      </button>
+      <img src={src} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8, objectFit: "contain" }} />
+    </div>
+  );
+}
+
 function WishlistDrawer({ open, onClose, wishlist, products, overrides, onRemove, onAddToCart }) {
   if (!open) return null;
   const items = wishlist.map((id) => products.find((p) => p.id === id)).filter(Boolean);
@@ -743,6 +798,7 @@ function WishlistDrawer({ open, onClose, wishlist, products, overrides, onRemove
 }
 
 function MyOrdersDrawer({ open, onClose, orders, overrides }) {
+  const [lightboxSrc, setLightboxSrc] = useState(null);
   if (!open) return null;
   const sorted = [...orders].sort((a, b) => b.createdAt - a.createdAt);
 
@@ -800,9 +856,10 @@ function MyOrdersDrawer({ open, onClose, orders, overrides }) {
                     <div style={{ fontSize: 10.5, color: "#9a9994", marginBottom: 4, fontWeight: 600, textTransform: "uppercase" }}>Comprobantes de pago</div>
                     <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                       {o.paymentProofs.map((p, i) => (
-                        <a key={i} href={p} target="_blank" rel="noreferrer" style={{ width: 42, height: 42, borderRadius: 6, overflow: "hidden", background: "#0f0f10", display: "block" }}>
+                        <button key={i} onClick={() => setLightboxSrc(p)} title="Ver comprobante"
+                          style={{ width: 42, height: 42, borderRadius: 6, overflow: "hidden", background: "#0f0f10", display: "block", padding: 0, border: "none", cursor: "zoom-in" }}>
                           <img src={p} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        </a>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -833,6 +890,7 @@ function MyOrdersDrawer({ open, onClose, orders, overrides }) {
           })}
         </div>
       </div>
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );
 }
@@ -878,6 +936,9 @@ function PriceRangeSlider({ bounds, value, onChange }) {
 
   return (
     <div style={{ marginBottom: 12, padding: "10px 12px", background: "#151516", border: "1px solid #232326", borderRadius: 10 }}>
+      <div style={{ fontSize: 11, color: "#9a9994", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
+        Rango de precio
+      </div>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#e2823c", fontWeight: 700, marginBottom: 14 }}>
         <span>{money(lo)}</span>
         <span>{money(hi)}</span>
@@ -1102,6 +1163,11 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsappNumbers, on
     const existing = c[key];
     return { ...c, [key]: { productId, variantIdx, variantImg, qty: (existing ? existing.qty : 0) + 1 } };
   });
+  const addOneForce = (productId, variantIdx, variantImg) => setCart((c) => {
+    const key = `${productId}::${variantIdx}`;
+    const existing = c[key];
+    return { ...c, [key]: { productId, variantIdx, variantImg, qty: (existing ? existing.qty : 0) + 1 } };
+  });
   const removeOne = (key) => setCart((c) => {
     const existing = c[key];
     if (!existing) return c;
@@ -1156,6 +1222,7 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsappNumbers, on
                 cart={cart} onAdd={addOne} onRemove={removeOne}
                 isWishlisted={wishlist.includes(p.id)} onToggleWishlist={() => toggleWishlist(p.id)}
                 onQuickSale={setFiguraTarget}
+                isAdmin={isAdmin} onAdminForceAdd={addOneForce}
               />
             ))}
           </div>
@@ -1232,7 +1299,7 @@ function AdminGate({ onSuccess, onCancel }) {
 
 /* ---------------- Admin: Pedidos tab ---------------- */
 
-const ORDER_STATUSES = ["Pendiente", "Pago Parcial", "Empacado", "Pagado"];
+const ORDER_STATUSES = ["Pendiente", "Pago Parcial", "Pagado", "Empacado"];
 const STATUS_COLORS = {
   "Pendiente": "#e2b34b",
   "Pago Parcial": "#6a94c9",
@@ -1262,6 +1329,7 @@ function PaymentDaysBadge({ o }) {
 function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, onAssignCliente }) {
   const [newClienteVal, setNewClienteVal] = useState("");
   const [assigning, setAssigning] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
   const proofCameraRef = useRef(null);
   const proofFileRef = useRef(null);
 
@@ -1277,6 +1345,7 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
 
   const showProofUpload = o.status === "Pago Parcial" || o.status === "Pagado" || o.status === "Empacado";
   const color = STATUS_COLORS[o.status] || "#9a9994";
+  const locked = o.status === "Pagado" || o.status === "Empacado";
 
   const recalcTotal = (items) => items.reduce((s, it) => s + it.price * it.qty, 0);
   const netTotal = Math.max(0, o.total - (o.discount || 0));
@@ -1296,7 +1365,7 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
       if (window.confirm("Es el único producto del pedido. ¿Eliminar todo el pedido?")) onDelete(o.id);
       return;
     }
-    if (!window.confirm("¿Quitar este producto del pedido? " + (o.status !== "Pagado" ? "La cantidad se devolverá al stock." : ""))) return;
+    if (!window.confirm("¿Quitar este producto del pedido? " + (!locked ? "La cantidad se devolverá al stock." : ""))) return;
     const newItems = o.items.filter((_, i) => i !== idx);
     onUpdate(o.id, { items: newItems, total: recalcTotal(newItems), _stockDeltas: [{ id: it.id, qtyChange: -it.qty }] });
   };
@@ -1336,19 +1405,21 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
               <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {it.code} {it.color && it.color.toUpperCase() !== "NA" ? `(${it.color})` : ""}
               </span>
-              <div style={{ display: "flex", alignItems: "center", gap: 2, background: "#1f1f22", borderRadius: 6, padding: "2px 2px", flexShrink: 0 }}>
-                <button onClick={() => changeItemQty(i, it.qty - 1)} style={{ background: "none", border: "none", color: "#f3f1ec", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 2, background: "#1f1f22", borderRadius: 6, padding: "2px 2px", flexShrink: 0, opacity: locked ? 0.5 : 1 }}>
+                <button onClick={() => changeItemQty(i, it.qty - 1)} disabled={locked} style={{ background: "none", border: "none", color: "#f3f1ec", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: locked ? "not-allowed" : "pointer" }}>
                   <Minus size={9} />
                 </button>
                 <span style={{ fontSize: 11, fontWeight: 700, minWidth: 14, textAlign: "center" }}>{it.qty}</span>
-                <button onClick={() => changeItemQty(i, it.qty + 1)} style={{ background: "none", border: "none", color: "#f3f1ec", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <button onClick={() => changeItemQty(i, it.qty + 1)} disabled={locked} style={{ background: "none", border: "none", color: "#f3f1ec", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: locked ? "not-allowed" : "pointer" }}>
                   <Plus size={9} />
                 </button>
               </div>
               <span style={{ flexShrink: 0, minWidth: 40, textAlign: "right" }}>{money(it.price * it.qty)}</span>
-              <button onClick={() => removeItem(i)} title="Quitar producto" style={{ background: "none", border: "none", color: "#6a6a6d", flexShrink: 0, display: "flex" }}>
-                <X size={12} />
-              </button>
+              {!locked && (
+                <button onClick={() => removeItem(i)} title="Quitar producto" style={{ background: "none", border: "none", color: "#6a6a6d", flexShrink: 0, display: "flex" }}>
+                  <X size={12} />
+                </button>
+              )}
             </div>
           );
         })}
@@ -1390,7 +1461,9 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
             {(o.paymentProofs || []).map((p, i) => (
               <div key={i} style={{ position: "relative", width: 42, height: 42, borderRadius: 6, overflow: "hidden", background: "#0f0f10" }}>
-                <a href={p} target="_blank" rel="noreferrer"><img src={p} style={{ width: "100%", height: "100%", objectFit: "cover" }} /></a>
+                <button onClick={() => setLightboxSrc(p)} title="Ver comprobante" style={{ display: "block", width: "100%", height: "100%", padding: 0, border: "none", background: "none", cursor: "zoom-in" }}>
+                  <img src={p} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                </button>
                 <button onClick={() => removeProof(i)} style={{ position: "absolute", top: 1, right: 1, background: "rgba(0,0,0,0.7)", border: "none", borderRadius: 999, width: 14, height: 14, color: "#fff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <X size={9} />
                 </button>
@@ -1411,7 +1484,7 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
       )}
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {o.status !== "Pagado" && (
+        {!locked && (
           <button onClick={() => onUpdate(o.id, { status: "Pagado" })}
             style={{ flex: 1, background: "#3fae6a", border: "none", color: "#06210f", fontWeight: 700, fontSize: 12, borderRadius: 8, padding: "8px 10px", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
             <Check size={13} /> Confirmar pago
@@ -1423,15 +1496,16 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
         style={{ width: "100%", marginTop: 6, background: "#1f1f22", border: `1px solid ${color}`, color, borderRadius: 6, padding: "5px 6px", fontSize: 11, fontWeight: 600 }}>
         {ORDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
       </select>
-      {o.status === "Pagado" ? (
+      {locked ? (
         <div style={{ fontSize: 10, color: "#3fae6a", marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
-          <Check size={10} /> Stock descontado de forma definitiva
+          <Lock size={10} /> Compra concretada · cantidades bloqueadas
         </div>
       ) : o.stockDeducted ? (
         <div style={{ fontSize: 10, color: "#6a94c9", marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
           <Check size={10} /> Stock reservado desde el envío
         </div>
       ) : null}
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );
 }
@@ -1458,11 +1532,13 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, set
     });
   };
 
+  const isLockedStatus = (status) => status === "Pagado" || status === "Empacado";
+
   const updateOrder = (id, patch) => {
     const { _stockDeltas, ...cleanPatch } = patch;
     setOrders((prev) => {
       const current = prev.find((o) => o.id === id);
-      if (current && _stockDeltas && current.status !== "Pagado") {
+      if (current && _stockDeltas && !isLockedStatus(current.status)) {
         applyStockDeltas(_stockDeltas);
       }
       const next = prev.map((o) => o.id === id ? { ...o, ...cleanPatch } : o);
@@ -1475,7 +1551,7 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, set
   const deleteOrder = (id) => {
     if (!window.confirm("¿Eliminar este pedido? Esta acción no se puede deshacer.")) return;
     const current = orders.find((o) => o.id === id);
-    if (current && current.status !== "Pagado") {
+    if (current && !isLockedStatus(current.status)) {
       applyStockDeltas(current.items.map((it) => ({ id: it.id, qtyChange: -it.qty })));
     }
     setOrders((prev) => prev.filter((o) => o.id !== id));
@@ -1495,7 +1571,7 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, set
 
   const exportPagados = () => {
     const rows = [["Timestamp","Unidades","Nombre del cliente","Fecha de Pedido","Modelo","Tipo","Descuento","Comentario","Precio","ID Pedido"]];
-    orders.filter((o) => o.status === "Pagado").forEach((o) => {
+    orders.filter((o) => o.status === "Pagado" || o.status === "Empacado").forEach((o) => {
       o.items.forEach((it) => {
         rows.push([
           new Date(o.createdAt).toISOString(),
@@ -2340,7 +2416,7 @@ function AdminView({ setView, orders, setOrders, clientes, setClientes, products
   return (
     <>
       <Header view="admin" isAdmin={true} setView={setView} cartCount={0} onOpenCart={() => {}} logo={logo} />
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px" }}>
+      <div style={{ maxWidth: 1600, margin: "0 auto", padding: "16px" }}>
         <div style={{ display: "flex", gap: 6, marginBottom: 16, borderBottom: "1px solid #232326", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {[["pedidos","Pedidos",ClipboardList,pendCount],["productos","Productos",Package,0],["wishlist","Wishlist",Heart,wishlists.length],["ajustes","Ajustes",Settings,0]].map(([id,label,Icon,badge]) => (
