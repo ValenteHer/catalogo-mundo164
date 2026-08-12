@@ -30,7 +30,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc } from "firebase/firestore";
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import * as XLSX from "xlsx";
 
@@ -74,8 +74,8 @@ async function fbFetchDoc(colName, id, fallback) {
   } catch (e) { console.error("fetch doc error", colName, id, e); return fallback; }
 }
 async function fbSaveDoc(colName, id, data) {
-  try { await setDoc(doc(db, colName, id), data); }
-  catch (e) { console.error("save doc error", colName, id, e); }
+  try { await setDoc(doc(db, colName, id), data); return true; }
+  catch (e) { console.error("save doc error", colName, id, e); return false; }
 }
 async function fbDeleteDoc(colName, id) {
   try { await deleteDoc(doc(db, colName, id)); }
@@ -617,24 +617,32 @@ function ProductCard({ product, photos, cart, onAdd, onRemove, isWishlisted, onT
 function CartDrawer({ open, onClose, cart, products, onQty, onSend, whatsappNumbers, clientInfo, setClientInfo }) {
   const [selectedNumber, setSelectedNumber] = useState(null);
   const [touched, setTouched] = useState(false);
+  const [sending, setSending] = useState(false);
   if (!open) return null;
   const items = Object.entries(cart).map(([key, entry]) => ({
     key, product: products.find((p) => p.id === entry.productId), qty: entry.qty, variantImg: entry.variantImg,
   })).filter((i) => i.product && i.qty > 0);
   const total = items.reduce((s, i) => s + i.product.price * i.qty, 0);
 
-  const nums = (whatsappNumbers || []).filter((n) => n && n.number);
+  const nums = (whatsappNumbers || []).filter((n) => n && n.number && n.number.trim());
   const infoComplete = clientInfo.nombre.trim() && clientInfo.apellido.trim() && clientInfo.ciudad.trim();
-  const numberOk = nums.length <= 1 || selectedNumber;
-  const canSend = items.length > 0 && infoComplete && numberOk;
+  const numberOk = nums.length === 0 || nums.length === 1 || selectedNumber;
+  const canSend = items.length > 0 && infoComplete && numberOk && nums.length > 0;
 
   const setField = (k) => (e) => setClientInfo((c) => ({ ...c, [k]: e.target.value }));
 
-  const handleSend = () => {
+  const handleSend = async () => {
     setTouched(true);
+    if (nums.length === 0) return;
     if (!canSend) return;
+    if (sending) return;
     const chosenNumber = nums.length === 1 ? nums[0].number : (nums.find((n) => n.number === selectedNumber) || nums[0]).number;
-    onSend(items, total, chosenNumber);
+    setSending(true);
+    try {
+      await onSend(items, total, chosenNumber);
+    } finally {
+      setSending(false);
+    }
   };
 
   const fieldStyle = (val) => ({
@@ -721,10 +729,16 @@ function CartDrawer({ open, onClose, cart, products, onQty, onSend, whatsappNumb
 
             <button
               onClick={handleSend}
-              style={{ width: "100%", background: "#25D366", border: "none", color: "#06210f", fontWeight: 700, fontSize: 14.5, borderRadius: 10, padding: "13px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+              disabled={nums.length === 0 || sending}
+              style={{ width: "100%", background: nums.length === 0 || sending ? "#3a3a3e" : "#25D366", border: "none", color: nums.length === 0 || sending ? "#7a7974" : "#06210f", fontWeight: 700, fontSize: 14.5, borderRadius: 10, padding: "13px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: nums.length === 0 || sending ? "not-allowed" : "pointer" }}
             >
-              Enviar pedido por WhatsApp
+              {sending ? "Enviando..." : "Enviar pedido por WhatsApp"}
             </button>
+            {nums.length === 0 && (
+              <div style={{ color: "#e08585", fontSize: 11.5, marginTop: 8, textAlign: "center" }}>
+                No hay ningún número de WhatsApp configurado. El vendedor debe agregarlo en Ajustes para poder recibir pedidos.
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1230,7 +1244,7 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsappNumbers, on
       </div>
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} cart={cart} products={products} onQty={setQty}
         whatsappNumbers={whatsappNumbers} clientInfo={clientInfo} setClientInfo={setClientInfo}
-        onSend={(items, total, numberChoice) => { onSubmitOrder(items, total, numberChoice); setCartOpen(false); }} />
+        onSend={async (items, total, numberChoice) => { const ok = await onSubmitOrder(items, total, numberChoice); if (ok) setCartOpen(false); }} />
       <WishlistDrawer open={wishlistOpen} onClose={() => setWishlistOpen(false)} wishlist={wishlist} products={products}
         overrides={overrides} onRemove={toggleWishlist} onAddToCart={(id) => addOne(id)} />
       <MyOrdersDrawer open={myOrdersOpen} onClose={() => setMyOrdersOpen(false)} orders={myOrders || []} overrides={overrides} />
@@ -1299,12 +1313,13 @@ function AdminGate({ onSuccess, onCancel }) {
 
 /* ---------------- Admin: Pedidos tab ---------------- */
 
-const ORDER_STATUSES = ["Pendiente", "Pago Parcial", "Pagado", "Empacado"];
+const ORDER_STATUSES = ["Pendiente", "Pago Parcial", "Pagado", "Empacado", "Enviado"];
 const STATUS_COLORS = {
   "Pendiente": "#e2b34b",
   "Pago Parcial": "#6a94c9",
   "Empacado": "#9b7fe0",
   "Pagado": "#3fae6a",
+  "Enviado": "#4fb8c4",
 };
 
 function daysRemaining(o) {
@@ -1343,9 +1358,9 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
     onUpdate(o.id, { paymentProofs: (o.paymentProofs || []).filter((_, i) => i !== idx) });
   };
 
-  const showProofUpload = o.status === "Pago Parcial" || o.status === "Pagado" || o.status === "Empacado";
+  const showProofUpload = o.status === "Pago Parcial" || o.status === "Pagado" || o.status === "Empacado" || o.status === "Enviado";
   const color = STATUS_COLORS[o.status] || "#9a9994";
-  const locked = o.status === "Pagado" || o.status === "Empacado";
+  const locked = o.status === "Pagado" || o.status === "Empacado" || o.status === "Enviado";
 
   const recalcTotal = (items) => items.reduce((s, it) => s + it.price * it.qty, 0);
   const netTotal = Math.max(0, o.total - (o.discount || 0));
@@ -1532,7 +1547,7 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, set
     });
   };
 
-  const isLockedStatus = (status) => status === "Pagado" || status === "Empacado";
+  const isLockedStatus = (status) => status === "Pagado" || status === "Empacado" || status === "Enviado";
 
   const updateOrder = (id, patch) => {
     const { _stockDeltas, ...cleanPatch } = patch;
@@ -1571,7 +1586,7 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, set
 
   const exportPagados = () => {
     const rows = [["Timestamp","Unidades","Nombre del cliente","Fecha de Pedido","Modelo","Tipo","Descuento","Comentario","Precio","ID Pedido"]];
-    orders.filter((o) => o.status === "Pagado" || o.status === "Empacado").forEach((o) => {
+    orders.filter((o) => o.status === "Pagado" || o.status === "Empacado" || o.status === "Enviado").forEach((o) => {
       o.items.forEach((it) => {
         rows.push([
           new Date(o.createdAt).toISOString(),
@@ -2410,7 +2425,7 @@ function AdminAjustes({ settings, setSettings }) {
 
 /* ---------------- Admin shell ---------------- */
 
-function AdminView({ setView, orders, setOrders, clientes, setClientes, products, setAddedProducts, overrides, setOverrides, settings, setSettings, logo, wishlists, setWishlists, onLogout }) {
+function AdminView({ setView, orders, setOrders, clientes, setClientes, products, setAddedProducts, overrides, setOverrides, settings, setSettings, logo, wishlists, setWishlists, onLogout, liveConnected }) {
   const [tab, setTab] = useState("pedidos");
   const pendCount = orders.filter((o) => o.status === "Pendiente").length;
   return (
@@ -2418,7 +2433,7 @@ function AdminView({ setView, orders, setOrders, clientes, setClientes, products
       <Header view="admin" isAdmin={true} setView={setView} cartCount={0} onOpenCart={() => {}} logo={logo} />
       <div style={{ maxWidth: 1600, margin: "0 auto", padding: "16px" }}>
         <div style={{ display: "flex", gap: 6, marginBottom: 16, borderBottom: "1px solid #232326", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {[["pedidos","Pedidos",ClipboardList,pendCount],["productos","Productos",Package,0],["wishlist","Wishlist",Heart,wishlists.length],["ajustes","Ajustes",Settings,0]].map(([id,label,Icon,badge]) => (
             <button key={id} onClick={() => setTab(id)} style={{
               display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", background: "none", border: "none",
@@ -2429,6 +2444,15 @@ function AdminView({ setView, orders, setOrders, clientes, setClientes, products
               {badge > 0 && <span style={{ background: "#e2823c", color: "#0c0c0d", fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: "1px 6px" }}>{badge}</span>}
             </button>
           ))}
+          {tab === "pedidos" && (
+            <span title={liveConnected ? "Los pedidos se actualizan automáticamente" : "Reconectando..."} style={{
+              display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: liveConnected ? "#3fae6a" : "#9a9994",
+              marginLeft: 8, padding: "4px 9px", borderRadius: 999, border: `1px solid ${liveConnected ? "#2a5a3e" : "#2c2c30"}`,
+            }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: liveConnected ? "#3fae6a" : "#7a7974" }} />
+              {liveConnected ? "En vivo" : "Conectando..."}
+            </span>
+          )}
           </div>
           <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "1px solid #2c2c30", color: "#9a9994", borderRadius: 8, padding: "7px 12px", fontSize: 12, marginBottom: 8 }}>
             <LogOut size={13} /> Cerrar sesión
@@ -2541,6 +2565,9 @@ function App() {
     return unsub;
   }, []);
 
+  const isAdminRef = useRef(false);
+  useEffect(() => { isAdminRef.current = isAdmin; }, [isAdmin]);
+
   const [addedProducts, setAddedProducts] = useState([]);
   const [overrides, setOverrides] = useState({});
   const [orders, setOrders] = useState([]);
@@ -2549,6 +2576,35 @@ function App() {
   const [cart, setCart] = useState({});
   const [toast, setToast] = useState(null);
   const [wishlists, setWishlists] = useState([]);
+  const [liveConnected, setLiveConnected] = useState(false);
+
+  // Escucha los pedidos en tiempo real: así los pedidos nuevos aparecen solos,
+  // sin necesidad de recargar la página. Además avisa al admin cuando llega uno.
+  useEffect(() => {
+    let firstSnapshot = true;
+    const unsub = onSnapshot(
+      collection(db, "orders"),
+      (snap) => {
+        const list = [];
+        snap.forEach((d) => list.push(d.data()));
+        setOrders(list);
+        setLiveConnected(true);
+        if (!firstSnapshot && isAdminRef.current) {
+          snap.docChanges().forEach((change) => {
+            if (change.type === "added") {
+              const o = change.doc.data();
+              const net = Math.max(0, (o.total || 0) - (o.discount || 0));
+              setToast(`🛎️ Nuevo pedido de ${o.cliente || "un cliente"} — ${money(net)}`);
+              setTimeout(() => setToast(null), 6000);
+            }
+          });
+        }
+        firstSnapshot = false;
+      },
+      (e) => { console.error("orders listen error", e); setLiveConnected(false); }
+    );
+    return () => unsub();
+  }, []);
 
   const [clientId] = useState(() => {
     let id = localStorage.getItem("m164_clientId");
@@ -2581,10 +2637,9 @@ function App() {
 
   useEffect(() => {
     (async () => {
-      const [addedMap, overridesMap, ordersMap, clientesDoc, settingsDoc, wishlistsMap] = await Promise.all([
+      const [addedMap, overridesMap, clientesDoc, settingsDoc, wishlistsMap] = await Promise.all([
         fbFetchCollection("added_products"),
         fbFetchCollection("overrides"),
-        fbFetchCollection("orders"),
         fbFetchDoc("meta", "clientes", { list: SEED_CLIENTES }),
         fbFetchDoc("meta", "settings", { whatsappNumbers: [{ label: "", number: "" }], pin: "1234", logo: null }),
         fbFetchCollection("wishlists"),
@@ -2612,7 +2667,6 @@ function App() {
       }
       setOverrides(finalOverrides);
 
-      setOrders(Object.values(ordersMap));
       setClientes(clientesDoc.list || SEED_CLIENTES);
       setWishlists(Object.values(wishlistsMap));
       const normalizedSettings = { ...settingsDoc };
@@ -2666,8 +2720,18 @@ function App() {
     });
   };
 
-  const submitOrder = (items, total, numberChoice) => {
-    const orderItems = items.map(({ product, qty, variantImg }) => ({ id: product.id, code: product.code, diameter: product.diameter, name: product.name, logo: product.logo, color: product.color, price: product.price, qty, variantImg: variantImg || null }));
+  const submitOrder = async (items, total, numberChoice) => {
+    const orderItems = items.map(({ product, qty, variantImg }) => ({
+      id: product.id,
+      code: product.code || "",
+      diameter: product.diameter || "",
+      name: product.name || "",
+      logo: product.logo || "",
+      color: product.color || "",
+      price: product.price || 0,
+      qty,
+      variantImg: variantImg || null,
+    }));
     const order = {
       id: "P" + Date.now().toString().slice(-8),
       createdAt: Date.now(),
@@ -2683,8 +2747,20 @@ function App() {
       stockDeducted: true,
       items: orderItems,
     };
+
+    // Guardamos el pedido en la base de datos ANTES de abrir WhatsApp.
+    // Al abrir WhatsApp el navegador pasa a segundo plano y puede pausar
+    // la página (sobre todo en celular), así que si guardáramos después,
+    // el pedido podría perderse. Guardándolo primero nos aseguramos de
+    // que quede registrado pase lo que pase con WhatsApp después.
+    const saved = await fbSaveDoc("orders", order.id, order);
+    if (!saved) {
+      setToast("⚠️ No se pudo guardar el pedido (revisa tu conexión) y no se envió. Vuelve a intentarlo.");
+      setTimeout(() => setToast(null), 6000);
+      return false;
+    }
+
     applyStockDeltasTop(orderItems.map((it) => ({ id: it.id, qtyChange: it.qty })));
-    fbSaveDoc("orders", order.id, order);
     setOrders((prev) => [...prev, order]);
     setCart({});
 
@@ -2694,8 +2770,9 @@ function App() {
     const url = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(url, "_blank");
 
-    setToast("¡Pedido enviado por WhatsApp!");
+    setToast("¡Pedido guardado y enviado por WhatsApp!");
     setTimeout(() => setToast(null), 4000);
+    return true;
   };
 
   const submitAdminOrder = (product, price, qty) => {
@@ -2712,7 +2789,7 @@ function App() {
       total,
       paymentProofs: [],
       stockDeducted: false,
-      items: [{ id: product.id, code: product.code, diameter: product.diameter, name: product.name, logo: product.logo, color: product.color, price, qty, variantImg: null }],
+      items: [{ id: product.id, code: product.code || "", diameter: product.diameter || "", name: product.name || "", logo: product.logo || "", color: product.color || "", price, qty, variantImg: null }],
     };
     fbSaveDoc("orders", order.id, order);
     setOrders((prev) => [...prev, order]);
@@ -2747,7 +2824,7 @@ function App() {
         <AdminView setView={setView} orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes}
           products={allProducts} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides}
           settings={settings} setSettings={setSettings} logo={settings.logo} wishlists={wishlists} setWishlists={setWishlists}
-          onLogout={() => { signOut(auth); setView("client"); }} />
+          onLogout={() => { signOut(auth); setView("client"); }} liveConnected={liveConnected} />
       )}
       {showGate && (
         <AdminGate onCancel={() => setShowGate(false)} onSuccess={() => { setView("admin"); setShowGate(false); }} />
