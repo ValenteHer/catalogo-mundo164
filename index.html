@@ -1530,6 +1530,7 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, set
 
   const applyStockDeltas = (deltas) => {
     // qtyChange positivo descuenta del stock; negativo lo devuelve
+    const writes = [];
     setOverrides((prev) => {
       const next = { ...prev };
       deltas.forEach(({ id, qtyChange }) => {
@@ -1541,21 +1542,22 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, set
         const newQty = Math.max(0, currentQty - qtyChange);
         const newOv = { ...currentOv, qty: newQty };
         next[id] = newOv;
-        fbSaveDoc("overrides", id, newOv);
+        writes.push(fbSaveDoc("overrides", id, newOv));
       });
       return next;
     });
+    return Promise.all(writes);
   };
 
   const isLockedStatus = (status) => status === "Pagado" || status === "Empacado" || status === "Enviado";
 
-  const updateOrder = (id, patch) => {
+  const updateOrder = async (id, patch) => {
     const { _stockDeltas, ...cleanPatch } = patch;
+    const current = orders.find((o) => o.id === id);
+    if (current && _stockDeltas && !isLockedStatus(current.status)) {
+      await applyStockDeltas(_stockDeltas);
+    }
     setOrders((prev) => {
-      const current = prev.find((o) => o.id === id);
-      if (current && _stockDeltas && !isLockedStatus(current.status)) {
-        applyStockDeltas(_stockDeltas);
-      }
       const next = prev.map((o) => o.id === id ? { ...o, ...cleanPatch } : o);
       const updated = next.find((o) => o.id === id);
       if (updated) fbSaveDoc("orders", id, updated);
@@ -1563,11 +1565,11 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, set
     });
   };
 
-  const deleteOrder = (id) => {
+  const deleteOrder = async (id) => {
     if (!window.confirm("¿Eliminar este pedido? Esta acción no se puede deshacer.")) return;
     const current = orders.find((o) => o.id === id);
     if (current && !isLockedStatus(current.status)) {
-      applyStockDeltas(current.items.map((it) => ({ id: it.id, qtyChange: -it.qty })));
+      await applyStockDeltas(current.items.map((it) => ({ id: it.id, qtyChange: -it.qty })));
     }
     setOrders((prev) => prev.filter((o) => o.id !== id));
     fbDeleteDoc("orders", id);
@@ -2702,22 +2704,26 @@ function App() {
     return merged.filter((p) => !p.deleted);
   }, [addedProducts, overrides]);
 
-  const applyStockDeltasTop = (deltas) => {
-    setOverrides((prev) => {
-      const next = { ...prev };
-      deltas.forEach(({ id, qtyChange }) => {
-        if (!qtyChange) return;
-        const currentOv = next[id] || {};
-        const productMatch = allProducts.find((p) => p.id === id);
-        const baseQty = productMatch ? productMatch.qty : 0;
-        const currentQty = numOr(currentOv.qty, baseQty);
-        const newQty = Math.max(0, currentQty - qtyChange);
-        const newOv = { ...currentOv, qty: newQty };
-        next[id] = newOv;
-        fbSaveDoc("overrides", id, newOv);
-      });
-      return next;
+  const applyStockDeltasTop = async (deltas) => {
+    const next = { ...overrides };
+    const writes = [];
+    deltas.forEach(({ id, qtyChange }) => {
+      if (!qtyChange) return;
+      const currentOv = next[id] || {};
+      const productMatch = allProducts.find((p) => p.id === id);
+      const baseQty = productMatch ? productMatch.qty : 0;
+      const currentQty = numOr(currentOv.qty, baseQty);
+      const newQty = Math.max(0, currentQty - qtyChange);
+      const newOv = { ...currentOv, qty: newQty };
+      next[id] = newOv;
+      writes.push(fbSaveDoc("overrides", id, newOv));
     });
+    setOverrides(next);
+    // Esperamos a que TODAS las escrituras de stock terminen antes de seguir.
+    // Si no se espera aquí, el navegador puede pasar a segundo plano al abrir
+    // WhatsApp justo después y cortar estas escrituras a medias — eso es lo
+    // que causaba que el stock no se descontara para algunos clientes.
+    await Promise.all(writes);
   };
 
   const submitOrder = async (items, total, numberChoice) => {
@@ -2760,7 +2766,7 @@ function App() {
       return false;
     }
 
-    applyStockDeltasTop(orderItems.map((it) => ({ id: it.id, qtyChange: it.qty })));
+    await applyStockDeltasTop(orderItems.map((it) => ({ id: it.id, qtyChange: it.qty })));
     setOrders((prev) => [...prev, order]);
     setCart({});
 
