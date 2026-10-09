@@ -181,6 +181,17 @@ function normPhotos(list) {
   return (list || []).map(normPhoto);
 }
 
+// "Huella" corta de una foto: sirve para reconocer, entre las fotos actuales del producto, la misma que se
+// eligió en un pedido (en el pedido solo guardamos una miniatura liviana).
+function photoFp(img) { return typeof img === "string" && img ? img.length + ":" + img.slice(-48) : null; }
+// Mejor foto disponible de un ítem de pedido: la original en alta resolución si todavía existe en el
+// producto; si no, la foto/miniatura guardada en el pedido.
+function bestPhoto(it, overrides) {
+  const list = overrides && overrides[it.id] && overrides[it.id].photos ? normPhotos(overrides[it.id].photos) : [];
+  if (it.variantFp) { const m = list.find((p) => photoFp(p.img) === it.variantFp); if (m && m.img) return m.img; }
+  return it.variantImg || (list[0] && list[0].img) || null;
+}
+
 function resizeImage(file, maxDim = 900, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -368,6 +379,25 @@ const ClipboardList = Icon(<><rect x="6" y="3" width="12" height="16" rx="2"/><p
 const ChevronLeft = Icon(<path d="M15 18l-6-6 6-6"/>);
 const ChevronRight = Icon(<path d="M9 18l6-6-6-6"/>);
 const ChevronDown = Icon(<path d="M6 9l6 6 6-6"/>);
+const FilterIcon = Icon(<path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>);
+const GridIcon = Icon(<><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>);
+const ListIcon = Icon(<><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></>);
+const WheelSecIcon = Icon(<><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v6"/><path d="M12 15v6"/><path d="M3 12h6"/><path d="M15 12h6"/></>);
+const FigureSecIcon = Icon(<><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2"/></>);
+const DioramaSecIcon = Icon(<><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></>);
+
+// Categorías del catálogo. Los productos sin categoría son "ruedas" (todo lo que ya existía).
+const SECTIONS = [
+  { id: "ruedas", label: "Ruedas", icon: WheelSecIcon },
+  { id: "figuras", label: "Figuras", icon: FigureSecIcon },
+  { id: "dioramas", label: "Dioramas", icon: DioramaSecIcon },
+];
+function sectionOf(p) {
+  if (p.section) return p.section;
+  if (p.id === "admin-figura-diorama") return "dioramas";
+  if (p.adminOnly) return "figuras";
+  return "ruedas";
+}
 const Lock = Icon(<><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></>);
 const Download = Icon(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></>);
 const LogOut = Icon(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></>);
@@ -411,6 +441,12 @@ function BrandStyles() {
       .m164-in { animation: m164fade 0.25s ease both; }
       .tread { background-image: repeating-linear-gradient(90deg, #e2823c 0 10px, transparent 10px 20px); height: 3px; opacity: 0.55; }
 
+      .m164-order-thumb { width: 30px; height: 30px; }
+      .m164-kanban-col { width: 280px; }
+      @media (min-width: 1280px) {
+        .m164-order-thumb { width: 48px; height: 48px; }
+        .m164-kanban-col { width: 300px; }
+      }
       .m164-header-inner { padding: 14px 16px; gap: 14px; }
       .m164-header-logo { width: 84px; height: 84px; border: 3px solid #e2823c; }
       .m164-header-title { font-size: 34px; }
@@ -831,14 +867,57 @@ function CartDrawer({ open, onClose, cart, products, onQty, onSend, whatsappNumb
   );
 }
 
-function ImageLightbox({ src, onClose }) {
-  if (!src) return null;
+// Visor de imágenes. Con `src` muestra una sola imagen; con `images` ([{src, caption}]) funciona como galería:
+// flechas, teclado (← → Esc), deslizar con el dedo, contador y descripción.
+function ImageLightbox({ src, images, index = 0, onIndex, onClose }) {
+  const list = images && images.length ? images : (src ? [{ src }] : []);
+  const pos = Math.min(Math.max(index, 0), Math.max(list.length - 1, 0));
+  const cur = list[pos];
+  const many = list.length > 1;
+  const go = (d) => { if (onIndex && many) onIndex((pos + d + list.length) % list.length); };
+  const touchX = useRef(null);
+  useEffect(() => {
+    if (!cur) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowRight") go(1);
+      else if (e.key === "ArrowLeft") go(-1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  if (!cur) return null;
+  const navBtn = { position: "absolute", top: "50%", transform: "translateY(-50%)", background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 999, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" };
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <button onClick={onClose} title="Cerrar" style={{ position: "absolute", top: 16, right: 16, background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 999, width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
+    <div onClick={onClose}
+      onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
+      onTouchEnd={(e) => {
+        if (touchX.current === null) return;
+        const dx = e.changedTouches[0].clientX - touchX.current;
+        touchX.current = null;
+        if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1);
+      }}
+      style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.94)", display: "flex", alignItems: "center", justifyContent: "center", padding: "56px 64px 64px" }}>
+      <button onClick={onClose} title="Cerrar (Esc)" style={{ position: "absolute", top: 16, right: 16, background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 999, width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
         <X size={20} />
       </button>
-      <img src={src} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8, objectFit: "contain" }} />
+      {many && (
+        <div style={{ position: "absolute", top: 22, left: 0, right: 0, textAlign: "center", color: "#c9c8c3", fontSize: 13, fontWeight: 600, pointerEvents: "none" }}>
+          {pos + 1} / {list.length}
+        </div>
+      )}
+      {many && (
+        <button onClick={(e) => { e.stopPropagation(); go(-1); }} title="Anterior (←)" style={{ ...navBtn, left: 14 }}><ChevronLeft size={24} /></button>
+      )}
+      <img key={pos} src={cur.src} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8, objectFit: "contain" }} />
+      {many && (
+        <button onClick={(e) => { e.stopPropagation(); go(1); }} title="Siguiente (→)" style={{ ...navBtn, right: 14 }}><ChevronRight size={24} /></button>
+      )}
+      {cur.caption && (
+        <div style={{ position: "absolute", bottom: 20, left: 0, right: 0, textAlign: "center", color: "#e4e2dc", fontSize: 14, fontWeight: 600, padding: "0 70px", pointerEvents: "none" }}>
+          {cur.caption}
+        </div>
+      )}
     </div>
   );
 }
@@ -897,7 +976,7 @@ function WishlistDrawer({ open, onClose, wishlist, products, overrides, onRemove
 }
 
 // Comprobantes de pago de un pedido, solo lectura (los antiguos dentro del pedido + los nuevos en su propio documento).
-function OrderProofsReadOnly({ order, onOpen }) {
+function OrderProofsReadOnly({ order, onOpen }) { // onOpen(images, index)
   const proofs = useOrderProofs(order.id, true);
   const all = [...(order.paymentProofs || []).map((img, i) => ({ id: "legacy" + i, img })), ...proofs];
   if (all.length === 0) return null;
@@ -905,8 +984,8 @@ function OrderProofsReadOnly({ order, onOpen }) {
     <div style={{ marginBottom: 8 }}>
       <div style={{ fontSize: 10.5, color: "#9a9994", marginBottom: 4, fontWeight: 600, textTransform: "uppercase" }}>Comprobantes de pago</div>
       <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-        {all.map((pr) => (
-          <button key={pr.id} onClick={() => onOpen(pr.img)} title="Ver comprobante"
+        {all.map((pr, idx) => (
+          <button key={pr.id} onClick={() => onOpen(all.map((x, i) => ({ src: x.img, caption: `Comprobante ${i + 1} de ${all.length}` })), idx)} title="Ver comprobante"
             style={{ width: 42, height: 42, borderRadius: 6, overflow: "hidden", background: "#0f0f10", display: "block", padding: 0, border: "none", cursor: "zoom-in" }}>
             <img src={pr.img} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           </button>
@@ -917,7 +996,7 @@ function OrderProofsReadOnly({ order, onOpen }) {
 }
 
 function MyOrdersDrawer({ open, onClose, orders, overrides, onHideOrder }) {
-  const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [gallery, setGallery] = useState(null); // { images, index } | null
   const [removingId, setRemovingId] = useState(null);
   if (!open) return null;
   const sorted = [...orders].sort((a, b) => b.createdAt - a.createdAt);
@@ -964,9 +1043,11 @@ function MyOrdersDrawer({ open, onClose, orders, overrides, onHideOrder }) {
                   {o.items.map((it, i) => {
                     const fallback = (overrides[it.id] && overrides[it.id].photos && normPhotos(overrides[it.id].photos)[0]) || null;
                     const photo = it.variantImg || (fallback ? fallback.img : null);
+                    const orderGallery = o.items.map((x, k) => ({ k, src: bestPhoto(x, overrides), caption: `${x.qty}x ${x.code}${x.color && x.color.toUpperCase() !== "NA" ? ` (${x.color})` : ""}` })).filter((g) => g.src);
+                    const openThis = () => { const pos = orderGallery.findIndex((g) => g.k === i); if (pos >= 0) setGallery({ images: orderGallery, index: pos }); };
                     return (
                       <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, color: "#c9c8c3" }}>
-                        <button type="button" onClick={() => photo && setLightboxSrc(photo)} disabled={!photo} title={photo ? "Ver foto" : ""}
+                        <button type="button" onClick={openThis} disabled={!photo} title={photo ? "Ver foto" : ""}
                           style={{ width: 44, height: 44, borderRadius: 7, overflow: "hidden", background: "#0f0f10", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, border: "1px solid #232326", cursor: photo ? "zoom-in" : "default" }}>
                           {photo ? <img src={photo} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <TirePlaceholder size={18} />}
                         </button>
@@ -978,7 +1059,7 @@ function MyOrdersDrawer({ open, onClose, orders, overrides, onHideOrder }) {
                     );
                   })}
                 </div>
-                <OrderProofsReadOnly order={o} onOpen={setLightboxSrc} />
+                <OrderProofsReadOnly order={o} onOpen={(images, index) => setGallery({ images, index })} />
                 <div style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 12.5 }}>
                   {o.discount > 0 && (
                     <div style={{ display: "flex", justifyContent: "space-between", color: "#9a9994" }}>
@@ -1009,72 +1090,79 @@ function MyOrdersDrawer({ open, onClose, orders, overrides, onHideOrder }) {
           })}
         </div>
       </div>
-      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+      {gallery && <ImageLightbox images={gallery.images} index={gallery.index} onIndex={(i) => setGallery((g) => ({ ...g, index: i }))} onClose={() => setGallery(null)} />}
     </div>
   );
 }
 
 /* ---------------- Client Catalog View ---------------- */
 
+// Barra de rango de precio. Toda la franja (52 px de alto) es zona táctil: tocas o arrastras en cualquier punto
+// y se mueve el control más cercano. Usa "pointer events" + touch-action:none para que en el teléfono la página
+// no se desplace mientras arrastras. Con rangos cortos avanza de 0.50 en 0.50 (los precios suelen ser .5).
 function PriceRangeSlider({ bounds, value, onChange }) {
   const [min, max] = bounds;
   const [lo, hi] = value || bounds;
   const trackRef = useRef(null);
-  const draggingRef = useRef(null);
+  const dragRef = useRef(null);
+  const step = max - min <= 30 ? 0.5 : 1;
 
-  const pctOf = (v) => max > min ? ((v - min) / (max - min)) * 100 : 0;
-
+  const pctOf = (v) => (max > min ? ((v - min) / (max - min)) * 100 : 0);
   const valFromClientX = (clientX) => {
     if (!trackRef.current) return min;
     const rect = trackRef.current.getBoundingClientRect();
-    const pct = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    return Math.round(min + pct * (max - min));
+    const pct = Math.min(1, Math.max(0, (clientX - rect.left) / (rect.width || 1)));
+    const raw = min + pct * (max - min);
+    return Math.min(max, Math.max(min, Math.round(raw / step) * step));
   };
-
-  const startDrag = (which) => (e) => {
-    e.preventDefault();
-    draggingRef.current = which;
-    const move = (ev) => {
-      const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
-      const v = valFromClientX(clientX);
-      if (draggingRef.current === "lo") onChange([Math.min(v, hi), hi]);
-      else onChange([lo, Math.max(v, lo)]);
-    };
-    const up = () => {
-      draggingRef.current = null;
-      document.removeEventListener("mousemove", move);
-      document.removeEventListener("mouseup", up);
-      document.removeEventListener("touchmove", move);
-      document.removeEventListener("touchend", up);
-    };
-    document.addEventListener("mousemove", move);
-    document.addEventListener("mouseup", up);
-    document.addEventListener("touchmove", move);
-    document.addEventListener("touchend", up);
+  const apply = (which, v) => {
+    if (which === "lo") onChange([Math.min(v, hi), hi]);
+    else onChange([lo, Math.max(v, lo)]);
   };
+  const onPointerDown = (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    const v = valFromClientX(e.clientX);
+    let which;
+    if (lo === hi) which = v < lo ? "lo" : "hi";
+    else which = Math.abs(v - lo) <= Math.abs(v - hi) ? "lo" : "hi";
+    dragRef.current = which;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* sin captura también funciona */ }
+    apply(which, v);
+  };
+  const onPointerMove = (e) => { if (dragRef.current) apply(dragRef.current, valFromClientX(e.clientX)); };
+  const endDrag = (e) => {
+    dragRef.current = null;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) { /* nada */ }
+  };
+  const thumb = (pct) => ({
+    position: "absolute", left: `${pct}%`, top: "50%", transform: "translate(-50%, -50%)", width: 28, height: 28,
+    borderRadius: "50%", background: "#e2823c", border: "3px solid #0c0c0d", boxShadow: "0 0 0 1px #e2823c, 0 2px 8px rgba(0,0,0,0.6)",
+    pointerEvents: "none",
+  });
 
   return (
-    <div style={{ marginBottom: 12, padding: "10px 12px", background: "#151516", border: "1px solid #232326", borderRadius: 10 }}>
-      <div style={{ fontSize: 11, color: "#9a9994", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
+    <div style={{ marginBottom: 12, padding: "10px 12px 6px", background: "#151516", border: "1px solid #232326", borderRadius: 10 }}>
+      <div style={{ fontSize: 11, color: "#9a9994", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>
         Rango de precio
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#e2823c", fontWeight: 700, marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#e2823c", fontWeight: 700 }}>
         <span>{money(lo)}</span>
         <span>{money(hi)}</span>
       </div>
-      <div ref={trackRef} style={{ position: "relative", height: 20, display: "flex", alignItems: "center" }}>
-        <div style={{ position: "absolute", left: 0, right: 0, height: 4, borderRadius: 999, background: "#2a2a2e" }} />
-        <div style={{ position: "absolute", left: `${pctOf(lo)}%`, right: `${100 - pctOf(hi)}%`, height: 4, borderRadius: 999, background: "#e2823c" }} />
-        <div onMouseDown={startDrag("lo")} onTouchStart={startDrag("lo")}
-          style={{ position: "absolute", left: `${pctOf(lo)}%`, transform: "translateX(-50%)", width: 18, height: 18, borderRadius: "50%", background: "#e2823c", border: "2px solid #0c0c0d", cursor: "grab", boxShadow: "0 2px 6px rgba(0,0,0,0.4)" }} />
-        <div onMouseDown={startDrag("hi")} onTouchStart={startDrag("hi")}
-          style={{ position: "absolute", left: `${pctOf(hi)}%`, transform: "translateX(-50%)", width: 18, height: 18, borderRadius: "50%", background: "#e2823c", border: "2px solid #0c0c0d", cursor: "grab", boxShadow: "0 2px 6px rgba(0,0,0,0.4)" }} />
+      <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
+        style={{ height: 52, padding: "0 16px", display: "flex", alignItems: "center", touchAction: "none", cursor: "pointer", userSelect: "none", WebkitUserSelect: "none" }}>
+        <div ref={trackRef} style={{ position: "relative", flex: 1, height: 28 }}>
+          <div style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 6, marginTop: -3, borderRadius: 999, background: "#2a2a2e" }} />
+          <div style={{ position: "absolute", left: `${pctOf(lo)}%`, right: `${100 - pctOf(hi)}%`, top: "50%", height: 6, marginTop: -3, borderRadius: 999, background: "#e2823c" }} />
+          <div style={thumb(pctOf(lo))} />
+          <div style={thumb(pctOf(hi))} />
+        </div>
       </div>
     </div>
   );
 }
 
-function FilterDropdown({ label, options, selected, onToggle, onRemove, swatches, openId, setOpenId }) {
+function FilterDropdown({ label, options, selected, onToggle, onRemove, swatches, openId, setOpenId, showChips = true }) {
   const id = label;
   const open = openId === id;
   const boxRef = useRef(null);
@@ -1120,7 +1208,7 @@ function FilterDropdown({ label, options, selected, onToggle, onRemove, swatches
             </div>
           )}
         </div>
-        {selected.map((opt) => (
+        {showChips && selected.map((opt) => (
           <span key={opt} style={{
             display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
             background: "rgba(226,130,60,0.15)", border: "1px solid #e2823c", color: "#e2823c",
@@ -1207,55 +1295,88 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsappNumbers, on
   const [myOrdersOpen, setMyOrdersOpen] = useState(false);
   const [figuraTarget, setFiguraTarget] = useState(null);
   const [openFilter, setOpenFilter] = useState(null);
+  const [section, setSection] = useState("ruedas");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const toggleIn = (setter) => (val) => setter((arr) => arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val]);
 
+  const isWheels = section === "ruedas";
+  const sectionProducts = useMemo(() => products.filter((p) => sectionOf(p) === section), [products, section]);
+  const sectionCounts = useMemo(() => {
+    const c = { ruedas: 0, figuras: 0, dioramas: 0 };
+    products.forEach((p) => {
+      if (p.archived) return;
+      if (p.adminOnly ? !isAdmin : p.visible === false) return;
+      const k = sectionOf(p);
+      c[k] = (c[k] || 0) + 1;
+    });
+    return c;
+  }, [products, isAdmin]);
+
   const priceBounds = useMemo(() => {
-    const prices = products.filter((p) => p.visible && !p.archived).map((p) => p.price).filter((n) => !isNaN(n));
+    const prices = sectionProducts.filter((p) => p.visible && !p.archived && !p.adminOnly).map((p) => p.price).filter((n) => !isNaN(n));
     if (prices.length === 0) return [0, 100];
     return [Math.floor(Math.min(...prices)), Math.ceil(Math.max(...prices))];
-  }, [products]);
+  }, [sectionProducts]);
   const [priceRange, setPriceRange] = useState(null);
   useEffect(() => { setPriceRange(priceBounds); }, [priceBounds[0], priceBounds[1]]);
 
   const sizes = useMemo(() => {
-    const s = new Set(products.filter((p) => p.qty > 0).map((p) => p.sizeTag).filter(Boolean));
+    const s = new Set(sectionProducts.filter((p) => p.qty > 0).map((p) => p.sizeTag).filter(Boolean));
     return Array.from(s).sort((a, b) => parseFloat(a) - parseFloat(b));
-  }, [products]);
+  }, [sectionProducts]);
   const colors = useMemo(() => {
     const s = new Set();
-    products.filter((p) => p.qty > 0).forEach((p) => (p.colorTags || []).forEach((t) => s.add(t)));
+    sectionProducts.filter((p) => p.qty > 0).forEach((p) => (p.colorTags || []).forEach((t) => s.add(t)));
     return Array.from(s).sort();
-  }, [products]);
+  }, [sectionProducts]);
   const brands = useMemo(() => {
-    const s = new Set(products.filter((p) => p.qty > 0).map((p) => p.brandTag).filter(Boolean));
+    const s = new Set(sectionProducts.filter((p) => p.qty > 0).map((p) => p.brandTag).filter(Boolean));
     return Array.from(s).sort();
-  }, [products]);
+  }, [sectionProducts]);
   const vehicles = useMemo(() => {
-    const s = new Set(products.filter((p) => p.qty > 0).map((p) => vehicleOf(p.sizeTag)).filter(Boolean));
+    const s = new Set(sectionProducts.filter((p) => p.qty > 0).map((p) => vehicleOf(p.sizeTag)).filter(Boolean));
     return Array.from(s).sort();
-  }, [products]);
+  }, [sectionProducts]);
   const availOptions = ["Disponible", "Fuera de stock"];
 
   const visible = useMemo(() => {
-    return products.filter((p) => {
+    return sectionProducts.filter((p) => {
       if (p.adminOnly && !isAdmin) return false;
       if (p.adminOnly) return !query.trim() || [p.code, p.name].some((f) => (f || "").toLowerCase().includes(query.toLowerCase()));
       if (!p.visible || p.archived) return false;
-      if (priceRange && (p.price < priceRange[0] || p.price > priceRange[1])) return false;
-      if (sizes_sel.length > 0 && !sizes_sel.includes(p.sizeTag)) return false;
-      if (colors_sel.length > 0 && !(p.colorTags || []).some((t) => colors_sel.includes(t))) return false;
-      if (brands_sel.length > 0 && !brands_sel.includes(p.brandTag)) return false;
-      if (vehicle_sel.length > 0 && !vehicle_sel.includes(vehicleOf(p.sizeTag))) return false;
-      if (avail_sel.length > 0) {
-        const availLabel = p.qty > 0 ? "Disponible" : "Fuera de stock";
-        if (!avail_sel.includes(availLabel)) return false;
+      if (isWheels) { // los filtros solo existen y aplican en Ruedas; Figuras y Dioramas no los usan
+        if (priceRange && (p.price < priceRange[0] || p.price > priceRange[1])) return false;
+        if (sizes_sel.length > 0 && !sizes_sel.includes(p.sizeTag)) return false;
+        if (colors_sel.length > 0 && !(p.colorTags || []).some((t) => colors_sel.includes(t))) return false;
+        if (brands_sel.length > 0 && !brands_sel.includes(p.brandTag)) return false;
+        if (vehicle_sel.length > 0 && !vehicle_sel.includes(vehicleOf(p.sizeTag))) return false;
+        if (avail_sel.length > 0) {
+          const availLabel = p.qty > 0 ? "Disponible" : "Fuera de stock";
+          if (!avail_sel.includes(availLabel)) return false;
+        }
       }
       if (!query.trim()) return true;
       const q = query.toLowerCase();
       return [p.code, p.name, p.diameter, p.color, p.logo].some((f) => (f || "").toLowerCase().includes(q));
     });
-  }, [products, query, sizes_sel, colors_sel, brands_sel, vehicle_sel, avail_sel, priceRange, isAdmin]);
+  }, [sectionProducts, isWheels, query, sizes_sel, colors_sel, brands_sel, vehicle_sel, avail_sel, priceRange, isAdmin]);
+
+  const priceChanged = !!priceRange && (priceRange[0] !== priceBounds[0] || priceRange[1] !== priceBounds[1]);
+  const activeCount = avail_sel.length + (isWheels ? vehicle_sel.length + sizes_sel.length + brands_sel.length + colors_sel.length : 0) + (priceChanged ? 1 : 0);
+  const clearFilters = () => {
+    setAvailSel([]); setVehicleSel([]); setSizesSel([]); setBrandsSel([]); setColorsSel([]); setPriceRange(priceBounds);
+  };
+  const activeChips = [
+    ...(priceChanged ? [{ key: "price", label: `Precio ${money(priceRange[0])} – ${money(priceRange[1])}`, remove: () => setPriceRange(priceBounds) }] : []),
+    ...avail_sel.map((o) => ({ key: "a:" + o, label: o, remove: () => toggleIn(setAvailSel)(o) })),
+    ...(isWheels ? [
+      ...vehicle_sel.map((o) => ({ key: "v:" + o, label: o, remove: () => toggleIn(setVehicleSel)(o) })),
+      ...sizes_sel.map((o) => ({ key: "s:" + o, label: o, remove: () => toggleIn(setSizesSel)(o) })),
+      ...brands_sel.map((o) => ({ key: "b:" + o, label: o, remove: () => toggleIn(setBrandsSel)(o) })),
+      ...colors_sel.map((o) => ({ key: "c:" + o, label: o, swatch: COLOR_SWATCH[o], remove: () => toggleIn(setColorsSel)(o) })),
+    ] : []),
+  ];
 
   const cartCount = Object.values(cart).reduce((s, v) => s + v.qty, 0);
 
@@ -1312,26 +1433,100 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsappNumbers, on
     <>
       <Header view="client" cartCount={cartCount} onOpenCart={() => setCartOpen(true)} isAdmin={false} setView={() => {}} logo={logo} wishlistCount={wishlist.length} onOpenWishlist={() => setWishlistOpen(true)} onOpenMyOrders={() => setMyOrdersOpen(true)} />
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px" }}>
-        <div style={{ position: "relative", marginBottom: 12 }}>
-          <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#7a7974" }} />
-          <input
-            value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar por código, nombre, color, medida..."
-            style={{ width: "100%", background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 10, padding: "10px 12px 10px 36px", color: "#f3f1ec", fontSize: 13.5 }}
-          />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 14 }}>
+          {SECTIONS.map((sec) => {
+            const Ic = sec.icon;
+            const active = sec.id === section;
+            const n = sectionCounts[sec.id] || 0;
+            return (
+              <button key={sec.id} onClick={() => setSection(sec.id)} aria-pressed={active}
+                style={{
+                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: "14px 6px",
+                  borderRadius: 14, border: active ? "2px solid #e2823c" : "1px solid #2a2a2e",
+                  background: active ? "rgba(226,130,60,0.14)" : "#151516", color: active ? "#e2823c" : "#e9e7e1",
+                }}>
+                <Ic size={26} />
+                <span style={{ fontSize: 15, fontWeight: 700 }}>{sec.label}</span>
+                <span style={{ fontSize: 10.5, fontWeight: 600, color: active ? "#e2a06a" : "#7a7974" }}>
+                  {n > 0 ? `${n} producto${n === 1 ? "" : "s"}` : "Próximamente"}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        {priceRange && <PriceRangeSlider bounds={priceBounds} value={priceRange} onChange={setPriceRange} />}
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+            <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#7a7974" }} />
+            <input
+              value={query} onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar por código, nombre, color, medida..."
+              style={{ width: "100%", background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 10, padding: "10px 12px 10px 36px", color: "#f3f1ec", fontSize: 13.5 }}
+            />
+          </div>
+          {isWheels && (
+          <button onClick={() => setFiltersOpen((o) => !o)} aria-expanded={filtersOpen}
+            style={{
+              display: "flex", alignItems: "center", gap: 7, flexShrink: 0, whiteSpace: "nowrap", padding: "0 12px", borderRadius: 10,
+              background: filtersOpen || activeCount > 0 ? "rgba(226,130,60,0.14)" : "#17171a",
+              border: filtersOpen || activeCount > 0 ? "1px solid #e2823c" : "1px solid #2a2a2e",
+              color: filtersOpen || activeCount > 0 ? "#e2823c" : "#e9e7e1", fontSize: 13.5, fontWeight: 600,
+            }}>
+            <FilterIcon size={16} /> Filtros
+            {activeCount > 0 && (
+              <span style={{ background: "#e2823c", color: "#0c0c0d", borderRadius: 999, fontSize: 11, fontWeight: 700, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>{activeCount}</span>
+            )}
+            <ChevronDown size={14} style={{ transform: filtersOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+          </button>
+          )}
+        </div>
 
-        <FilterDropdown label="Disponibilidad" options={availOptions} selected={avail_sel} onToggle={toggleIn(setAvailSel)} onRemove={toggleIn(setAvailSel)} openId={openFilter} setOpenId={setOpenFilter} />
-        <FilterDropdown label="Tipo de vehículo" options={vehicles} selected={vehicle_sel} onToggle={toggleIn(setVehicleSel)} onRemove={toggleIn(setVehicleSel)} openId={openFilter} setOpenId={setOpenFilter} />
-        <FilterDropdown label="Tamaño" options={sizes} selected={sizes_sel} onToggle={toggleIn(setSizesSel)} onRemove={toggleIn(setSizesSel)} openId={openFilter} setOpenId={setOpenFilter} />
-        <FilterDropdown label="Marca del caucho" options={brands} selected={brands_sel} onToggle={toggleIn(setBrandsSel)} onRemove={toggleIn(setBrandsSel)} openId={openFilter} setOpenId={setOpenFilter} />
-        <FilterDropdown label="Color" options={colors} selected={colors_sel} onToggle={toggleIn(setColorsSel)} onRemove={toggleIn(setColorsSel)} openId={openFilter} setOpenId={setOpenFilter} swatches={COLOR_SWATCH} />
+        {isWheels && activeChips.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10, alignItems: "center" }}>
+            {activeChips.map((c) => (
+              <span key={c.key} style={{
+                display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap", background: "rgba(226,130,60,0.15)", border: "1px solid #e2823c",
+                color: "#e2823c", borderRadius: 999, padding: "5px 8px 5px 12px", fontSize: 12, fontWeight: 600,
+              }}>
+                {c.swatch && <span style={{ width: 9, height: 9, borderRadius: "50%", background: c.swatch, border: "1px solid rgba(255,255,255,0.4)" }} />}
+                {c.label}
+                <button onClick={c.remove} aria-label="Quitar filtro" style={{ background: "none", border: "none", color: "#e2823c", display: "flex", alignItems: "center", padding: 0 }}>
+                  <X size={13} />
+                </button>
+              </span>
+            ))}
+            <button onClick={clearFilters} style={{ background: "none", border: "none", color: "#9a9994", fontSize: 12, textDecoration: "underline", padding: "4px 6px" }}>Limpiar todo</button>
+          </div>
+        )}
+
+        {isWheels && filtersOpen && (
+          <div style={{ marginBottom: 14, padding: 12, background: "#121214", border: "1px solid #232326", borderRadius: 12 }}>
+            {priceRange && sectionCounts[section] > 0 && <PriceRangeSlider bounds={priceBounds} value={priceRange} onChange={setPriceRange} />}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0 8px", alignItems: "flex-start" }}>
+              <FilterDropdown label="Disponibilidad" options={availOptions} selected={avail_sel} onToggle={toggleIn(setAvailSel)} onRemove={toggleIn(setAvailSel)} openId={openFilter} setOpenId={setOpenFilter} showChips={false} />
+              {isWheels && (
+                <>
+                  <FilterDropdown label="Tipo de vehículo" options={vehicles} selected={vehicle_sel} onToggle={toggleIn(setVehicleSel)} onRemove={toggleIn(setVehicleSel)} openId={openFilter} setOpenId={setOpenFilter} showChips={false} />
+                  <FilterDropdown label="Tamaño" options={sizes} selected={sizes_sel} onToggle={toggleIn(setSizesSel)} onRemove={toggleIn(setSizesSel)} openId={openFilter} setOpenId={setOpenFilter} showChips={false} />
+                  <FilterDropdown label="Marca del caucho" options={brands} selected={brands_sel} onToggle={toggleIn(setBrandsSel)} onRemove={toggleIn(setBrandsSel)} openId={openFilter} setOpenId={setOpenFilter} showChips={false} />
+                  <FilterDropdown label="Color" options={colors} selected={colors_sel} onToggle={toggleIn(setColorsSel)} onRemove={toggleIn(setColorsSel)} openId={openFilter} setOpenId={setOpenFilter} swatches={COLOR_SWATCH} showChips={false} />
+                </>
+              )}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <button onClick={clearFilters} disabled={activeCount === 0} style={{ background: "none", border: "none", color: activeCount === 0 ? "#4a4a4d" : "#9a9994", fontSize: 12.5, textDecoration: "underline", padding: "4px 0" }}>Limpiar filtros</button>
+              <button onClick={() => { setFiltersOpen(false); setOpenFilter(null); }} style={{ background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "8px 16px" }}>
+                Ver {visible.length} producto{visible.length === 1 ? "" : "s"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {visible.length === 0 ? (
           <div style={{ textAlign: "center", padding: "60px 0", color: "#7a7974" }}>
-            No encontramos productos con esa búsqueda.
+            {sectionCounts[section] === 0
+              ? `Pronto habrá productos en ${(SECTIONS.find((x) => x.id === section) || {}).label || "esta categoría"}.`
+              : "No encontramos productos con esa búsqueda."}
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: 12 }}>
@@ -1449,7 +1644,7 @@ function PaymentDaysBadge({ o }) {
 function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, onAssignCliente }) {
   const [newClienteVal, setNewClienteVal] = useState("");
   const [assigning, setAssigning] = useState(false);
-  const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [gallery, setGallery] = useState(null); // { images, index } | null
   const proofCameraRef = useRef(null);
   const proofFileRef = useRef(null);
 
@@ -1470,6 +1665,21 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
     onUpdate(o.id, { paymentProofs: (o.paymentProofs || []).filter((_, i) => i !== idx) });
   };
   const removeNewProof = (id) => { fbDeleteDoc(`orders/${o.id}/proofs`, id); };
+
+  // Galerías: comprobantes (antiguos + nuevos) y fotos de los productos del pedido.
+  const allProofImgs = [...(o.paymentProofs || []), ...proofs.map((pr) => pr.img)];
+  const openProofs = (idx) => setGallery({
+    images: allProofImgs.map((src, i) => ({ src, caption: `Comprobante ${i + 1} de ${allProofImgs.length}` })),
+    index: idx,
+  });
+  const itemGallery = o.items.map((it, i) => ({
+    i, src: bestPhoto(it, overrides),
+    caption: `${it.qty}x ${it.code}${it.color && it.color.toUpperCase() !== "NA" ? ` (${it.color})` : ""}${it.name ? ` — ${it.name}` : ""}`,
+  })).filter((g) => g.src);
+  const openItemPhoto = (i) => {
+    const pos = itemGallery.findIndex((g) => g.i === i);
+    if (pos >= 0) setGallery({ images: itemGallery, index: pos });
+  };
   const color = STATUS_COLORS[o.status] || "#9a9994";
   const locked = o.status === "Pagado" || o.status === "Empacado" || o.status === "Enviado";
 
@@ -1525,9 +1735,10 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
           const photo = it.variantImg || (fallback ? fallback.img : null);
           return (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#c9c8c3" }}>
-              <div style={{ width: 24, height: 24, borderRadius: 5, overflow: "hidden", background: "#0f0f10", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {photo ? <img src={photo} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <TirePlaceholder size={13} />}
-              </div>
+              <button type="button" className="m164-order-thumb" onClick={() => openItemPhoto(i)} disabled={!photo} title={photo ? "Ver foto" : ""}
+                style={{ borderRadius: 6, overflow: "hidden", background: "#0f0f10", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, border: "1px solid #232326", cursor: photo ? "zoom-in" : "default" }}>
+                {photo ? <img src={photo} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <TirePlaceholder size={14} />}
+              </button>
               <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {it.code} {it.color && it.color.toUpperCase() !== "NA" ? `(${it.color})` : ""}
               </span>
@@ -1587,7 +1798,7 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
             {(o.paymentProofs || []).map((p, i) => (
               <div key={i} style={{ position: "relative", width: 42, height: 42, borderRadius: 6, overflow: "hidden", background: "#0f0f10" }}>
-                <button onClick={() => setLightboxSrc(p)} title="Ver comprobante" style={{ display: "block", width: "100%", height: "100%", padding: 0, border: "none", background: "none", cursor: "zoom-in" }}>
+                <button onClick={() => openProofs(i)} title="Ver comprobante" style={{ display: "block", width: "100%", height: "100%", padding: 0, border: "none", background: "none", cursor: "zoom-in" }}>
                   <img src={p} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </button>
                 <button onClick={() => removeProof(i)} style={{ position: "absolute", top: 1, right: 1, background: "rgba(0,0,0,0.7)", border: "none", borderRadius: 999, width: 14, height: 14, color: "#fff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1595,9 +1806,9 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
                 </button>
               </div>
             ))}
-            {proofs.map((pr) => (
+            {proofs.map((pr, j) => (
               <div key={pr.id} style={{ position: "relative", width: 42, height: 42, borderRadius: 6, overflow: "hidden", background: "#0f0f10" }}>
-                <button onClick={() => setLightboxSrc(pr.img)} title="Ver comprobante" style={{ display: "block", width: "100%", height: "100%", padding: 0, border: "none", background: "none", cursor: "zoom-in" }}>
+                <button onClick={() => openProofs((o.paymentProofs || []).length + j)} title="Ver comprobante" style={{ display: "block", width: "100%", height: "100%", padding: 0, border: "none", background: "none", cursor: "zoom-in" }}>
                   <img src={pr.img} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </button>
                 <button onClick={() => removeNewProof(pr.id)} style={{ position: "absolute", top: 1, right: 1, background: "rgba(0,0,0,0.7)", border: "none", borderRadius: 999, width: 14, height: 14, color: "#fff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1641,7 +1852,7 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
           <Check size={10} /> Stock reservado desde el envío
         </div>
       ) : null}
-      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+      {gallery && <ImageLightbox images={gallery.images} index={gallery.index} onIndex={(i) => setGallery((g) => ({ ...g, index: i }))} onClose={() => setGallery(null)} />}
     </div>
   );
 }
@@ -1751,7 +1962,7 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, set
           const colPending = inCol.reduce((s, o) => s + Math.max(0, netOf(o) - (o.advancePaid || 0)), 0);
           return (
             <div key={status} onDragOver={onColDragOver} onDrop={onColDrop(status)}
-              style={{ width: 280, flexShrink: 0, background: "#111112", border: "1px solid #202023", borderRadius: 12, padding: 10, minHeight: 200 }}>
+              className="m164-kanban-col" style={{ flexShrink: 0, background: "#111112", border: "1px solid #202023", borderRadius: 12, padding: 10, minHeight: 200 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, padding: "0 2px" }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
                 <span style={{ fontSize: 12.5, fontWeight: 700, color }}>{status}</span>
@@ -2104,20 +2315,38 @@ function ImportExcelModal({ onClose, onImport }) {
   );
 }
 
-function NewProductModal({ onClose, onSave, initial, title }) {
-  const [form, setForm] = useState(initial || { code: "", diameter: "", name: "", logo: "NA", color: "NA", price: "", qty: "" });
+function NewProductModal({ onClose, onSave, initial, title, defaultSection = "ruedas" }) {
+  const [form, setForm] = useState(() => ({ code: "", diameter: "", name: "", logo: "NA", color: "NA", price: "", qty: "", section: defaultSection, ...(initial || {}) }));
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const canSave = form.code.trim() && form.name.trim() && form.price !== "";
+  const isWheels = (form.section || "ruedas") === "ruedas";
+  const canSave = (form.name || "").trim() && form.price !== "" && (!isWheels || (form.code || "").trim());
+  const fields = isWheels
+    ? [["code", "Código"], ["diameter", "Medida (ej. 10.8mm)"], ["name", "Nombre"], ["logo", "Logo / marca de llanta"], ["color", "Color"]]
+    : [["code", "Código (opcional, si lo dejas vacío se genera solo)"], ["name", "Nombre"]];
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ background: "#141415", border: "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(420px,100%)", maxHeight: "85vh", overflowY: "auto" }}>
         <div className="disp" style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>{title || "Nuevo producto"}</div>
-        {[
-          ["code","Código"], ["diameter","Medida (ej. 10.8mm)"], ["name","Nombre"], ["logo","Logo / marca de llanta"], ["color","Color"],
-        ].map(([k,label]) => (
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11.5, color: "#9a9994", display: "block", marginBottom: 6 }}>Categoría</label>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+            {SECTIONS.map((sec) => {
+              const Ic = sec.icon;
+              const active = (form.section || "ruedas") === sec.id;
+              return (
+                <button key={sec.id} type="button" onClick={() => setForm((f) => ({ ...f, section: sec.id }))} aria-pressed={active}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "10px 4px", borderRadius: 10, fontSize: 12.5, fontWeight: 700,
+                    border: active ? "2px solid #e2823c" : "1px solid #2a2a2e", background: active ? "rgba(226,130,60,0.14)" : "#1a1a1c", color: active ? "#e2823c" : "#c9c8c3" }}>
+                  <Ic size={20} /> {sec.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {fields.map(([k, label]) => (
           <div key={k} style={{ marginBottom: 10 }}>
             <label style={{ fontSize: 11.5, color: "#9a9994", display: "block", marginBottom: 4 }}>{label}</label>
-            <input value={form[k]} onChange={set(k)} style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "9px 10px", color: "#f3f1ec", fontSize: 13.5 }} />
+            <input value={form[k] || ""} onChange={set(k)} style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "9px 10px", color: "#f3f1ec", fontSize: 13.5 }} />
           </div>
         ))}
         <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
@@ -2132,7 +2361,7 @@ function NewProductModal({ onClose, onSave, initial, title }) {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "10px", fontSize: 13 }}>Cancelar</button>
-          <button disabled={!canSave} onClick={() => onSave({ ...form, price: parseFloat(form.price) || 0, qty: parseInt(form.qty) || 0 })}
+          <button disabled={!canSave} onClick={() => onSave({ ...form, section: form.section || "ruedas", price: parseFloat(form.price) || 0, qty: parseInt(form.qty) || 0 })}
             style={{ flex: 1, background: canSave ? "#e2823c" : "#3a3a3e", border: "none", color: canSave ? "#0c0c0d" : "#7a7974", fontWeight: 700, borderRadius: 8, padding: "10px", fontSize: 13 }}>
             Guardar
           </button>
@@ -2152,6 +2381,12 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
   const [viewMode, setViewMode] = useState("activos");
   const [editTarget, setEditTarget] = useState(null);
   const [duplicateTarget, setDuplicateTarget] = useState(null);
+  const [layout, setLayout] = useState(() => {
+    try { return localStorage.getItem("m164_admin_layout") === "cuadricula" ? "cuadricula" : "lista"; } catch (e) { return "lista"; }
+  });
+  useEffect(() => { try { localStorage.setItem("m164_admin_layout", layout); } catch (e) { /* sin almacenamiento */ } }, [layout]);
+  const [sectionFilter, setSectionFilter] = useState("todas");
+  const [gridLimit, setGridLimit] = useState(60);
 
   const COLUMN_DEFS = {
     photo: { label: "Foto", sortable: false },
@@ -2167,15 +2402,16 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
     visible: { label: "Mostrar", sortable: false },
     actions: { label: "Acciones", sortable: false },
   };
-  const DEFAULT_COL_ORDER = ["photo","code","diameter","name","logo","color","complete","price","qty","photos","visible","actions"];
+  // Modo lista: solo las columnas esenciales. Código, medida, nombre, logo y color se editan con el botón de lápiz (Acciones).
+  const DEFAULT_COL_ORDER = ["photo","photos","visible","complete","price","qty","actions"];
   const [columnOrder, setColumnOrder] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem("m164_admin_colorder"));
+      const saved = JSON.parse(localStorage.getItem("m164_admin_colorder_v2"));
       if (Array.isArray(saved) && saved.length === DEFAULT_COL_ORDER.length && DEFAULT_COL_ORDER.every((c) => saved.includes(c))) return saved;
     } catch (e) {}
     return DEFAULT_COL_ORDER;
   });
-  useEffect(() => { localStorage.setItem("m164_admin_colorder", JSON.stringify(columnOrder)); }, [columnOrder]);
+  useEffect(() => { try { localStorage.setItem("m164_admin_colorder_v2", JSON.stringify(columnOrder)); } catch (e) { /* sin almacenamiento */ } }, [columnOrder]);
   const [dragCol, setDragCol] = useState(null);
   const onColDragStart = (id) => (e) => { setDragCol(id); e.dataTransfer.effectAllowed = "move"; };
   const onColDragOver = (e) => e.preventDefault();
@@ -2203,6 +2439,7 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
 
   const visible = useMemo(() => {
     let list = products.filter((p) => {
+      if (sectionFilter !== "todas" && sectionOf(p) !== sectionFilter) return false;
       if (!query.trim()) return true;
       const q = query.toLowerCase();
       return [p.code, p.name, p.diameter, p.logo, p.color].some((f) => (f || "").toLowerCase().includes(q));
@@ -2226,7 +2463,28 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
       });
     }
     return list;
-  }, [products, query, sortKey, sortDir, overrides, viewMode]);
+  }, [products, query, sortKey, sortDir, overrides, viewMode, sectionFilter]);
+  useEffect(() => { setGridLimit(60); }, [query, sectionFilter, viewMode, sortKey, sortDir, layout]);
+
+  // Código automático para figuras/dioramas cuando se deja vacío (FIG-001, DIO-001...).
+  const autoCode = (section) => {
+    if (section === "ruedas") return "";
+    const prefix = section === "figuras" ? "FIG" : "DIO";
+    const n = products.filter((p) => sectionOf(p) === section && !p.adminOnly).length + 1;
+    return `${prefix}-${String(n).padStart(3, "0")}`;
+  };
+  const buildNewProduct = (form, id) => {
+    const section = form.section || "ruedas";
+    const isW = section === "ruedas";
+    const diameter = isW ? form.diameter : "";
+    const logo = isW ? form.logo : "";
+    const color = isW ? form.color : "";
+    return {
+      id, code: (form.code || "").trim() || autoCode(section), diameter, name: form.name, logo, color,
+      price: form.price, qty: form.qty, category: "Otros", section, isNew: true,
+      sizeTag: sizeTagOf(diameter), colorTags: colorTagsOf(color), brandTag: brandTagOf(logo),
+    };
+  };
 
   const updateOverride = (id, patch) => {
     setOverrides((prev) => {
@@ -2244,83 +2502,17 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
   };
 
   const exportNuevos = () => {
-    const rows = [["Código","Diameter","Name","Logo","Color","Price","Quantity"]];
+    const rows = [["Código","Diameter","Name","Logo","Color","Price","Quantity","Categoría"]];
     products.filter((p) => p.isNew).forEach((p) => {
       const ov = overrides[p.id] || {};
-      rows.push([p.code, p.diameter, p.name, p.logo, p.color, numOr(ov.price, p.price), numOr(ov.qty, p.qty)]);
+      rows.push([p.code, p.diameter, p.name, p.logo, p.color, numOr(ov.price, p.price), numOr(ov.qty, p.qty), sectionOf(p)]);
     });
     downloadCSV(`productos_nuevos_${Date.now()}.csv`, rows);
   };
 
-  const th = { textAlign: "left", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "#9a9994", borderBottom: "1px solid #2a2a2e", whiteSpace: "nowrap", background: "#151516", position: "sticky", top: 0 };
-  const td = { padding: "6px 10px", fontSize: 12.5, borderBottom: "1px solid #1d1d20", color: "#e9e7e1", whiteSpace: "nowrap" };
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-        <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
-          <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#7a7974" }} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar producto..."
-            style={{ width: "100%", background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "8px 10px 8px 30px", color: "#f3f1ec", fontSize: 13 }} />
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {[["activos","Activos"],["archivados","Archivados"]].map(([id,label]) => (
-            <button key={id} onClick={() => setViewMode(id)} style={{
-              padding: "8px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 600,
-              border: viewMode === id ? "1px solid #e2823c" : "1px solid #2a2a2e",
-              background: viewMode === id ? "rgba(226,130,60,0.15)" : "transparent",
-              color: viewMode === id ? "#e2823c" : "#9a9994",
-            }}>{label}</button>
-          ))}
-        </div>
-        <button onClick={() => setShowNew(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: "#e2823c", border: "none", color: "#0c0c0d", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 700 }}>
-          <Plus size={14} /> Nuevo producto
-        </button>
-        <button onClick={() => setShowImport(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600 }}>
-          <FileSpreadsheet size={14} /> Importar Excel
-        </button>
-        <button onClick={exportNuevos} style={{ display: "flex", alignItems: "center", gap: 6, background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600 }}>
-          <Download size={14} /> Exportar nuevos
-        </button>
-      </div>
-      <div style={{ fontSize: 11.5, color: "#7a7974", marginBottom: 10 }}>Mostrando {visible.length} de {products.length} productos. Precio y stock disponible se guardan al escribir — úsalo para corregir el inventario manualmente cuando agregues fotos o edites datos.</div>
-      <div className="m164-scrollbar" style={{ overflowX: "auto", border: "1px solid #232326", borderRadius: 10, maxHeight: "70vh", overflowY: "auto" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 980 }}>
-          <thead>
-            <tr>
-              {columnOrder.map((colId) => {
-                const def = COLUMN_DEFS[colId];
-                const isComplete = colId === "complete";
-                return (
-                  <th key={colId}
-                    draggable
-                    onDragStart={onColDragStart(colId)}
-                    onDragOver={onColDragOver}
-                    onDrop={onColDrop(colId)}
-                    onClick={def.sortable ? () => toggleSort(colId) : undefined}
-                    style={{
-                      ...th,
-                      ...(isComplete ? { minWidth: 260 } : {}),
-                      cursor: def.sortable ? "pointer" : "grab",
-                      userSelect: "none",
-                      opacity: dragCol === colId ? 0.4 : 1,
-                    }}
-                    title="Arrastra para reordenar columnas"
-                  >
-                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      {def.label}
-                      {def.sortable && (sortKey === colId ? (sortDir === "asc" ? <ChevronDown size={11} style={{ transform: "rotate(180deg)" }} /> : <ChevronDown size={11} />) : <ChevronDown size={11} style={{ opacity: 0.25 }} />)}
-                    </span>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((p) => {
-              const ov = overrides[p.id] || {};
-              const photos = normPhotos(ov.photos);
-              const cellFor = (colId) => {
+  const cellFor = (p, colId) => {
+    const ov = overrides[p.id] || {};
+    const photos = normPhotos(ov.photos);
                 switch (colId) {
                   case "photo":
                     return (
@@ -2339,7 +2531,13 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
                   case "color":
                     return p.color;
                   case "complete":
-                    return <span style={{ color: "#b5b3ad", fontSize: 12 }}>{completeName(p)}</span>;
+                    return (
+                      <span style={{ color: "#b5b3ad", fontSize: 12 }}>
+                        {completeName(p)}
+                        {sectionOf(p) !== "ruedas" && <span style={{ color: "#e2a06a", fontSize: 9.5, marginLeft: 6, fontWeight: 700 }}>{sectionOf(p) === "figuras" ? "FIGURA" : "DIORAMA"}</span>}
+                        {p.isNew && <span style={{ color: "#3fae6a", fontSize: 9.5, marginLeft: 6 }}>nuevo</span>}
+                      </span>
+                    );
                   case "price":
                     return (
                       <input type="number" step="0.01" value={ov.price !== undefined ? ov.price : p.price}
@@ -2400,34 +2598,172 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
                   default:
                     return null;
                 }
-              };
-              return (
-                <tr key={p.id}>
-                  {columnOrder.map((colId) => (
-                    <td key={colId} style={{ ...td, ...(colId === "name" || colId === "complete" ? { whiteSpace: "normal", minWidth: colId === "complete" ? 260 : 160 } : {}) }}>
-                      {cellFor(colId)}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
+  };
+
+  const th = { textAlign: "left", padding: "8px 10px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "#9a9994", borderBottom: "1px solid #2a2a2e", whiteSpace: "nowrap", background: "#151516", position: "sticky", top: 0 };
+  const td = { padding: "6px 10px", fontSize: 12.5, borderBottom: "1px solid #1d1d20", color: "#e9e7e1", whiteSpace: "nowrap" };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
+          <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#7a7974" }} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar producto..."
+            style={{ width: "100%", background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "8px 10px 8px 30px", color: "#f3f1ec", fontSize: 13 }} />
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[["activos","Activos"],["archivados","Archivados"]].map(([id,label]) => (
+            <button key={id} onClick={() => setViewMode(id)} style={{
+              padding: "8px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 600,
+              border: viewMode === id ? "1px solid #e2823c" : "1px solid #2a2a2e",
+              background: viewMode === id ? "rgba(226,130,60,0.15)" : "transparent",
+              color: viewMode === id ? "#e2823c" : "#9a9994",
+            }}>{label}</button>
+          ))}
+        </div>
+        <button onClick={() => setShowNew(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: "#e2823c", border: "none", color: "#0c0c0d", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 700 }}>
+          <Plus size={14} /> Nuevo producto
+        </button>
+        <button onClick={() => setShowImport(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600 }}>
+          <FileSpreadsheet size={14} /> Importar Excel
+        </button>
+        <button onClick={exportNuevos} style={{ display: "flex", alignItems: "center", gap: 6, background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600 }}>
+          <Download size={14} /> Exportar nuevos
+        </button>
+      </div>
+      <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {[["todas", "Todas"], ...SECTIONS.map((x) => [x.id, x.label])].map(([id, label]) => (
+            <button key={id} onClick={() => setSectionFilter(id)} aria-pressed={sectionFilter === id} style={{
+              padding: "7px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 600,
+              border: sectionFilter === id ? "1px solid #e2823c" : "1px solid #2a2a2e",
+              background: sectionFilter === id ? "rgba(226,130,60,0.15)" : "transparent",
+              color: sectionFilter === id ? "#e2823c" : "#9a9994",
+            }}>{label}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {layout === "cuadricula" && (
+            <select value={sortKey && ["complete", "price", "qty"].includes(sortKey) ? `${sortKey}|${sortDir}` : ""}
+              onChange={(e) => { const v = e.target.value; if (!v) { setSortKey(null); setSortDir("asc"); } else { const [k, d] = v.split("|"); setSortKey(k); setSortDir(d); } }}
+              style={{ background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "7px 8px", color: "#c9c8c3", fontSize: 12.5 }}>
+              <option value="">Orden original</option>
+              <option value="complete|asc">Nombre A–Z</option>
+              <option value="price|asc">Precio ↑</option>
+              <option value="price|desc">Precio ↓</option>
+              <option value="qty|asc">Stock ↑</option>
+              <option value="qty|desc">Stock ↓</option>
+            </select>
+          )}
+          <div style={{ display: "flex", border: "1px solid #2a2a2e", borderRadius: 8, overflow: "hidden" }}>
+            {[["lista", "Ver en lista", ListIcon], ["cuadricula", "Ver en cuadrícula", GridIcon]].map(([id, label, Ic]) => (
+              <button key={id} onClick={() => setLayout(id)} title={label} aria-label={label} aria-pressed={layout === id}
+                style={{ padding: "7px 11px", border: "none", display: "flex", alignItems: "center", background: layout === id ? "rgba(226,130,60,0.18)" : "transparent", color: layout === id ? "#e2823c" : "#9a9994" }}>
+                <Ic size={16} />
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: 11.5, color: "#7a7974", marginBottom: 10 }}>Mostrando {visible.length} de {products.length} productos. Precio y stock disponible se guardan al escribir — úsalo para corregir el inventario manualmente cuando agregues fotos o edites datos.</div>
+      {layout === "lista" ? (
+      <div className="m164-scrollbar" style={{ overflowX: "auto", border: "1px solid #232326", borderRadius: 10, maxHeight: "70vh", overflowY: "auto" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 720 }}>
+          <thead>
+            <tr>
+              {columnOrder.map((colId) => {
+                const def = COLUMN_DEFS[colId];
+                const isComplete = colId === "complete";
+                return (
+                  <th key={colId}
+                    draggable
+                    onDragStart={onColDragStart(colId)}
+                    onDragOver={onColDragOver}
+                    onDrop={onColDrop(colId)}
+                    onClick={def.sortable ? () => toggleSort(colId) : undefined}
+                    style={{
+                      ...th,
+                      ...(isComplete ? { minWidth: 260 } : {}),
+                      cursor: def.sortable ? "pointer" : "grab",
+                      userSelect: "none",
+                      opacity: dragCol === colId ? 0.4 : 1,
+                    }}
+                    title="Arrastra para reordenar columnas"
+                  >
+                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      {def.label}
+                      {def.sortable && (sortKey === colId ? (sortDir === "asc" ? <ChevronDown size={11} style={{ transform: "rotate(180deg)" }} /> : <ChevronDown size={11} />) : <ChevronDown size={11} style={{ opacity: 0.25 }} />)}
+                    </span>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((p) => (
+              <tr key={p.id}>
+                {columnOrder.map((colId) => (
+                  <td key={colId} style={{ ...td, ...(colId === "name" || colId === "complete" ? { whiteSpace: "normal", minWidth: colId === "complete" ? 260 : 160 } : {}) }}>
+                    {cellFor(p, colId)}
+                  </td>
+                ))}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
+      ) : (
+        <div>
+          {visible.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: "#7a7974", fontSize: 13 }}>No hay productos en esta vista.</div>}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
+            {visible.slice(0, gridLimit).map((p) => {
+              const ph = normPhotos((overrides[p.id] || {}).photos);
+              const sec = sectionOf(p);
+              return (
+                <div key={p.id} style={{ background: "#151516", border: "1px solid #232326", borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column", opacity: p.visible === false ? 0.6 : 1 }}>
+                  <button onClick={() => setPhotoTarget(p)} title="Administrar fotos"
+                    style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", padding: 0, border: "none", background: "#0f0f10", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {ph[0] ? <img src={ph[0].img} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <TirePlaceholder size={56} />}
+                    <span style={{ position: "absolute", left: 6, top: 6, display: "flex", gap: 4 }}>
+                      {sec !== "ruedas" && <span style={{ background: "rgba(0,0,0,0.7)", color: "#e2a06a", fontSize: 9.5, fontWeight: 700, borderRadius: 5, padding: "2px 6px" }}>{sec === "figuras" ? "FIGURA" : "DIORAMA"}</span>}
+                      {p.isNew && <span style={{ background: "rgba(0,0,0,0.7)", color: "#3fae6a", fontSize: 9.5, fontWeight: 700, borderRadius: 5, padding: "2px 6px" }}>nuevo</span>}
+                    </span>
+                  </button>
+                  <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 9, flex: 1 }}>
+                    <div title={completeName(p)} style={{ fontSize: 12.5, lineHeight: 1.3, color: "#e9e7e1", minHeight: 48, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{completeName(p)}</div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <label style={{ fontSize: 10.5, color: "#9a9994", display: "flex", flexDirection: "column", gap: 3 }}>Precio{cellFor(p, "price")}</label>
+                      <label style={{ fontSize: 10.5, color: "#9a9994", display: "flex", flexDirection: "column", gap: 3 }}>Stock{cellFor(p, "qty")}</label>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                      {cellFor(p, "photos")}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "#9a9994" }}>Mostrar {cellFor(p, "visible")}</span>
+                    </div>
+                    <div style={{ marginTop: "auto" }}>{cellFor(p, "actions")}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {visible.length > gridLimit && (
+            <div style={{ textAlign: "center", marginTop: 14 }}>
+              <button onClick={() => setGridLimit((n) => n + 60)} style={{ background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 600 }}>
+                Mostrar más ({visible.length - gridLimit} restantes)
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {photoTarget && (
         <ProductPhotosModal product={photoTarget} photos={(overrides[photoTarget.id] || {}).photos || []}
           onClose={() => setPhotoTarget(null)}
           onSave={(list) => { updateOverride(photoTarget.id, { photos: list }); setPhotoTarget(null); }} />
       )}
       {showNew && (
-        <NewProductModal onClose={() => setShowNew(false)}
+        <NewProductModal onClose={() => setShowNew(false)} defaultSection={sectionFilter === "todas" ? "ruedas" : sectionFilter}
           onSave={(form) => {
             const id = "new-" + Date.now();
-            const newProduct = {
-              id, code: form.code, diameter: form.diameter, name: form.name, logo: form.logo, color: form.color,
-              price: form.price, qty: form.qty, category: "Otros", isNew: true,
-              sizeTag: sizeTagOf(form.diameter), colorTags: colorTagsOf(form.color), brandTag: brandTagOf(form.logo),
-            };
+            const newProduct = buildNewProduct(form, id);
             setAddedProducts((prev) => [...prev, newProduct]);
             fbSaveDoc("added_products", id, newProduct);
             setShowNew(false);
@@ -2435,22 +2771,25 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
       )}
       {editTarget && (
         <NewProductModal title={`Editar — ${editTarget.code}`} onClose={() => setEditTarget(null)}
-          initial={{ code: editTarget.code, diameter: editTarget.diameter, name: editTarget.name, logo: editTarget.logo, color: editTarget.color, price: editTarget.price, qty: editTarget.qty }}
+          initial={{ code: editTarget.code, diameter: editTarget.diameter, name: editTarget.name, logo: editTarget.logo, color: editTarget.color, price: editTarget.price, qty: editTarget.qty, section: sectionOf(editTarget) }}
           onSave={(form) => {
-            updateOverride(editTarget.id, { code: form.code, diameter: form.diameter, name: form.name, logo: form.logo, color: form.color, price: form.price, qty: form.qty });
+            const sec = form.section || "ruedas";
+            const isW = sec === "ruedas";
+            updateOverride(editTarget.id, {
+              code: form.code, diameter: isW ? form.diameter : "", name: form.name, logo: isW ? form.logo : "", color: isW ? form.color : "",
+              price: form.price, section: sec,
+              // el stock solo se escribe si lo cambiaste, para no pisar descuentos de pedidos hechos mientras el formulario estaba abierto
+              ...(Number(form.qty) !== Number(editTarget.qty) ? { qty: form.qty } : {}),
+            });
             setEditTarget(null);
           }} />
       )}
       {duplicateTarget && (
         <NewProductModal title={`Duplicar — ${duplicateTarget.code}`} onClose={() => setDuplicateTarget(null)}
-          initial={{ code: duplicateTarget.code, diameter: duplicateTarget.diameter, name: duplicateTarget.name, logo: duplicateTarget.logo, color: duplicateTarget.color, price: duplicateTarget.price, qty: duplicateTarget.qty }}
+          initial={{ code: duplicateTarget.code, diameter: duplicateTarget.diameter, name: duplicateTarget.name, logo: duplicateTarget.logo, color: duplicateTarget.color, price: duplicateTarget.price, qty: duplicateTarget.qty, section: sectionOf(duplicateTarget) }}
           onSave={(form) => {
             const id = "new-" + Date.now();
-            const newProduct = {
-              id, code: form.code, diameter: form.diameter, name: form.name, logo: form.logo, color: form.color,
-              price: form.price, qty: form.qty, category: "Otros", isNew: true,
-              sizeTag: sizeTagOf(form.diameter), colorTags: colorTagsOf(form.color), brandTag: brandTagOf(form.logo),
-            };
+            const newProduct = buildNewProduct(form, id);
             setAddedProducts((prev) => [...prev, newProduct]);
             fbSaveDoc("added_products", id, newProduct);
             setDuplicateTarget(null);
@@ -2610,8 +2949,14 @@ function AdminAjustes({ settings, setSettings, clientes, setClientes, orders, se
 
 /* ---------------- Admin shell ---------------- */
 
-function AdminView({ setView, orders, setOrders, clientes, setClientes, products, setAddedProducts, overrides, setOverrides, settings, setSettings, logo, wishlists, setWishlists, onLogout, liveConnected }) {
+function AdminView({ setView, orders, setOrders, clientes, setClientes, products, setAddedProducts, overrides, setOverrides, settings, setSettings, logo, wishlists, setWishlists, onLogout, liveConnected, ordersError }) {
   const [tab, setTab] = useState("pedidos");
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (liveConnected || ordersError) { setSlow(false); return undefined; }
+    const t = setTimeout(() => setSlow(true), 20000);
+    return () => clearTimeout(t);
+  }, [liveConnected, ordersError]);
   const pendCount = orders.filter((o) => o.status === "Pendiente").length;
   return (
     <>
@@ -2630,12 +2975,12 @@ function AdminView({ setView, orders, setOrders, clientes, setClientes, products
             </button>
           ))}
           {tab === "pedidos" && (
-            <span title={liveConnected ? "Los pedidos se actualizan automáticamente" : "Reconectando..."} style={{
-              display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: liveConnected ? "#3fae6a" : "#9a9994",
-              marginLeft: 8, padding: "4px 9px", borderRadius: 999, border: `1px solid ${liveConnected ? "#2a5a3e" : "#2c2c30"}`,
+            <span title={liveConnected ? "Los pedidos se actualizan automáticamente" : ordersError ? "No se pudieron cargar los pedidos" : "Cargando pedidos..."} style={{
+              display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: ordersError ? "#e2736b" : liveConnected ? "#3fae6a" : "#9a9994",
+              marginLeft: 8, padding: "4px 9px", borderRadius: 999, border: `1px solid ${ordersError ? "#5a2a2e" : liveConnected ? "#2a5a3e" : "#2c2c30"}`,
             }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: liveConnected ? "#3fae6a" : "#7a7974" }} />
-              {liveConnected ? "En vivo" : "Conectando..."}
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: ordersError ? "#e2736b" : liveConnected ? "#3fae6a" : "#7a7974" }} />
+              {ordersError ? "Error" : liveConnected ? "En vivo" : "Conectando..."}
             </span>
           )}
           </div>
@@ -2643,6 +2988,15 @@ function AdminView({ setView, orders, setOrders, clientes, setClientes, products
             <LogOut size={13} /> Cerrar sesión
           </button>
         </div>
+        {tab === "pedidos" && (ordersError || slow) && (
+          <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 10, fontSize: 12.5, lineHeight: 1.5, border: `1px solid ${ordersError ? "#5a2a2e" : "#3a3a3e"}`, background: ordersError ? "#2a1517" : "#151516", color: ordersError ? "#f0b4ae" : "#c9c8c3" }}>
+            {ordersError === "permission-denied"
+              ? "No tienes permiso para leer los pedidos. Casi siempre es porque el correo escrito en las reglas de Firestore (la función isAdmin) no es exactamente el de tu cuenta de administrador, o porque las reglas no se publicaron. Corrígelo en Firebase → Firestore → Reglas y recarga esta página."
+              : ordersError
+                ? `No se pudieron cargar los pedidos (código: ${ordersError}). Revisa tu conexión y recarga la página.`
+                : "Los pedidos siguen cargando. Si tarda mucho, puede deberse a pedidos antiguos con fotos pesadas: en Ajustes usa \"Mover comprobantes antiguos\"."}
+          </div>
+        )}
         {tab === "pedidos" && <AdminPedidos orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes} overrides={overrides} setOverrides={setOverrides} products={products} />}
         {tab === "productos" && <AdminProductos products={products} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides} />}
         {tab === "wishlist" && <AdminWishlist wishlists={wishlists} setWishlists={setWishlists} />}
@@ -2772,6 +3126,7 @@ function App() {
   const [toast, setToast] = useState(null);
   const [wishlists, setWishlists] = useState([]);
   const [liveConnected, setLiveConnected] = useState(false);
+  const [ordersError, setOrdersError] = useState(null);
 
   // Pedidos en tiempo real. El administrador recibe TODOS los pedidos; cada cliente recibe solo
   // los suyos (las reglas de Firestore lo exigen). Así nadie descarga pedidos ni comprobantes
@@ -2779,6 +3134,7 @@ function App() {
   useEffect(() => {
     setOrders([]);
     setLiveConnected(false);
+    setOrdersError(null);
     if (!isAdmin && !authUid) return;
     let firstSnapshot = true;
     const source = isAdmin
@@ -2791,6 +3147,7 @@ function App() {
         snap.forEach((d) => list.push(d.data()));
         setOrders(list);
         setLiveConnected(true);
+        setOrdersError(null);
         if (isAdmin && !firstSnapshot) {
           snap.docChanges().forEach((change) => {
             if (change.type === "added") {
@@ -2817,7 +3174,7 @@ function App() {
         }
         firstSnapshot = false;
       },
-      (e) => { console.error("orders listen error", e); setLiveConnected(false); }
+      (e) => { console.error("orders listen error", e); setLiveConnected(false); setOrdersError((e && e.code) || "error"); }
     );
     return () => unsub();
   }, [isAdmin, authUid]);
@@ -2918,7 +3275,7 @@ function App() {
   const allProducts = useMemo(() => {
     const merged = [...SEED_PRODUCTS, ...addedProducts].map((p) => {
       const ov = overrides[p.id];
-      if (!ov) return { ...p, visible: true, archived: false, deleted: false };
+      if (!ov) return { ...p, section: sectionOf(p), visible: true, archived: false, deleted: false };
       const code = ov.code !== undefined ? ov.code : p.code;
       const diameter = ov.diameter !== undefined ? ov.diameter : p.diameter;
       const name = ov.name !== undefined ? ov.name : p.name;
@@ -2927,6 +3284,7 @@ function App() {
       const fieldsChanged = ov.diameter !== undefined || ov.color !== undefined || ov.logo !== undefined;
       return {
         ...p, code, diameter, name, logo, color,
+        section: sectionOf({ ...p, section: ov.section !== undefined ? ov.section : p.section }),
         price: numOr(ov.price, p.price), qty: numOr(ov.qty, p.qty),
         sizeTag: fieldsChanged ? sizeTagOf(diameter) : p.sizeTag,
         colorTags: fieldsChanged ? colorTagsOf(color) : p.colorTags,
@@ -2958,6 +3316,7 @@ function App() {
   const submitOrder = async (items, total, numberChoice) => {
     // En el pedido se guarda una miniatura liviana de cada foto, no la foto completa (límite de 1 MB por pedido).
     const thumbs = await Promise.all(items.map(({ variantImg }) => makeThumb(variantImg)));
+    const fps = items.map(({ variantImg }) => photoFp(variantImg));
     const orderItems = items.map(({ product, qty }, idx) => ({
       id: product.id,
       code: product.code || "",
@@ -2968,6 +3327,7 @@ function App() {
       price: product.price || 0,
       qty,
       variantImg: thumbs[idx] || null,
+      variantFp: fps[idx] || null,
     }));
     const order = {
       id: "P" + Date.now().toString().slice(-8),
@@ -3079,7 +3439,7 @@ function App() {
         <AdminView setView={setView} orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes}
           products={allProducts} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides}
           settings={settings} setSettings={setSettings} logo={settings.logo} wishlists={wishlists} setWishlists={setWishlists}
-          onLogout={() => { signOut(auth); setView("client"); }} liveConnected={liveConnected} />
+          onLogout={() => { signOut(auth); setView("client"); }} liveConnected={liveConnected} ordersError={ordersError} />
       )}
       {showGate && (
         <AdminGate onCancel={() => setShowGate(false)} onSuccess={() => { setView("admin"); setShowGate(false); }} />
