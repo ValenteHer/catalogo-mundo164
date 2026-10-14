@@ -382,6 +382,7 @@ const ChevronDown = Icon(<path d="M6 9l6 6 6-6"/>);
 const FilterIcon = Icon(<path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>);
 const GridIcon = Icon(<><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>);
 const ListIcon = Icon(<><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></>);
+const BarChartIcon = Icon(<><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></>);
 const WheelSecIcon = Icon(<><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v6"/><path d="M12 15v6"/><path d="M3 12h6"/><path d="M15 12h6"/></>);
 const FigureSecIcon = Icon(<><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2"/></>);
 const DioramaSecIcon = Icon(<><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></>);
@@ -2198,10 +2199,11 @@ function ProductPhotosModal({ product, photos, onClose, onSave }) {
   );
 }
 
-function ImportExcelModal({ onClose, onImport }) {
+function ImportExcelModal({ onClose, onImport, existingProducts = [] }) {
   const [rows, setRows] = useState([]);
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
+  const [section, setSection] = useState("ruedas");
   const fileRef = useRef(null);
 
   const norm = (s) => (s || "").toString().trim().toLowerCase();
@@ -2219,10 +2221,12 @@ function ImportExcelModal({ onClose, onImport }) {
       Object.keys(json[0]).forEach((k) => {
         const nk = norm(k);
         if (nk.includes("codigo") || nk.includes("código")) keyMap.code = k;
+        else if (nk.includes("categor")) keyMap.section = k;
         else if (nk.includes("diameter") || nk.includes("medida")) keyMap.diameter = k;
         else if (nk.includes("name") || nk.includes("nombre")) keyMap.name = k;
         else if (nk.includes("logo") || nk.includes("marca")) keyMap.logo = k;
         else if (nk.includes("color")) keyMap.color = k;
+        else if (nk.includes("costo") || nk.includes("cost")) keyMap.cost = k;
         else if (nk.includes("price") || nk.includes("precio")) keyMap.price = k;
         else if (nk.includes("quantity") || nk.includes("cantidad") || nk.includes("stock")) keyMap.qty = k;
       });
@@ -2233,16 +2237,28 @@ function ImportExcelModal({ onClose, onImport }) {
         return;
       }
 
-      const parsed = json.map((r) => ({
-        code: (r[keyMap.code] ?? "").toString().trim(),
-        diameter: (r[keyMap.diameter] ?? "").toString().trim(),
-        name: (r[keyMap.name] ?? "").toString().trim(),
-        logo: (r[keyMap.logo] ?? "NA").toString().trim() || "NA",
-        color: (r[keyMap.color] ?? "NA").toString().trim() || "NA",
-        price: parseFloat(r[keyMap.price]) || 0,
-        qty: parseInt(r[keyMap.qty]) || 0,
-      })).filter((r) => r.code);
+      const parsed = json.map((r) => {
+        const rawCost = keyMap.cost ? r[keyMap.cost] : "";
+        const cost = rawCost === "" || rawCost === null || rawCost === undefined ? null : parseFloat(rawCost);
+        return {
+          code: (r[keyMap.code] ?? "").toString().trim(),
+          diameter: (r[keyMap.diameter] ?? "").toString().trim(),
+          name: (r[keyMap.name] ?? "").toString().trim(),
+          logo: (r[keyMap.logo] ?? "").toString().trim(),
+          color: (r[keyMap.color] ?? "").toString().trim(),
+          price: parseFloat(r[keyMap.price]) || 0,
+          qty: parseInt(r[keyMap.qty]) || 0,
+          cost: cost === null || isNaN(cost) ? null : cost,
+          sectionRaw: keyMap.section ? norm(r[keyMap.section]) : "",
+        };
+      }).filter((r) => r.code);
 
+      // si el archivo trae una columna Categoría, se preselecciona
+      const first = parsed.find((r) => r.sectionRaw);
+      if (first) {
+        const hit = SECTIONS.find((x) => x.id === first.sectionRaw || norm(x.label) === first.sectionRaw);
+        if (hit) setSection(hit.id);
+      }
       setRows(parsed);
     } catch (e) {
       setError("No pude leer el archivo. Asegúrate de que sea un .xlsx válido.");
@@ -2250,14 +2266,26 @@ function ImportExcelModal({ onClose, onImport }) {
     }
   };
 
+  // En Ruedas se conservan medida/logo/color (NA si vienen vacíos). En Figuras y Dioramas van vacíos y el código no se repite.
+  const isWheels = section === "ruedas";
+  const existingCodes = new Set(existingProducts.filter((p) => sectionOf(p) === section && !p.adminOnly).map((p) => norm(p.code)));
+  const prepared = rows.map((r) => ({
+    ...r,
+    diameter: isWheels ? r.diameter : "", logo: isWheels ? (r.logo || "NA") : "", color: isWheels ? (r.color || "NA") : "",
+    duplicate: !isWheels && existingCodes.has(norm(r.code)),
+  }));
+  const toImport = prepared.filter((r) => !r.duplicate);
+  const skipped = prepared.length - toImport.length;
+  const withCost = toImport.filter((r) => r.cost !== null).length;
+
   const confirm = () => {
-    onImport(rows);
+    onImport(toImport, section);
     onClose();
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ background: "#141415", border: "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(600px,100%)", maxHeight: "85vh", overflowY: "auto" }}>
+      <div style={{ background: "#141415", border: "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(640px,100%)", maxHeight: "85vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <div className="disp" style={{ fontSize: 15, fontWeight: 700 }}>Importar productos desde Excel</div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#9a9994" }}><X size={18} /></button>
@@ -2266,9 +2294,9 @@ function ImportExcelModal({ onClose, onImport }) {
         {rows.length === 0 && (
           <>
             <div style={{ fontSize: 12, color: "#9a9994", marginBottom: 12, lineHeight: 1.5 }}>
-              Sube un archivo .xlsx con columnas <b>Código, Diameter, Name, Logo, Color, Price, Quantity</b> (los nombres pueden variar un poco, ej. "Nombre" o "Precio" también funcionan).
+              Sube un archivo .xlsx con columnas <b>Código, Diameter, Name, Logo, Color, Price, Quantity</b>. Opcionales: <b>Costo</b> (costo por unidad con envío, privado) y <b>Categoría</b> (ruedas, figuras o dioramas). Los nombres pueden variar un poco, ej. "Nombre" o "Precio".
             </div>
-            <button onClick={() => fileRef.current.click()} style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, border: "1.5px dashed #3a3a3e", borderRadius: 10, padding: "28px", background: "transparent", color: "#9a9994" }}>
+            <button onClick={() => fileRef.current.click()} style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, border: "1.5px dashed #3a3a3e", borderRadius: 10, padding: "22px 10px", background: "transparent", color: "#9a9994" }}>
               <FileSpreadsheet size={26} />
               <span style={{ fontSize: 12.5 }}>{fileName || "Toca para elegir un archivo .xlsx"}</span>
             </button>
@@ -2279,34 +2307,50 @@ function ImportExcelModal({ onClose, onImport }) {
 
         {rows.length > 0 && (
           <>
-            <div style={{ fontSize: 12.5, color: "#3fae6a", marginBottom: 10 }}>{fileName} — {rows.length} productos listos para importar</div>
-            <div className="m164-scrollbar" style={{ maxHeight: 280, overflowY: "auto", border: "1px solid #232326", borderRadius: 8, marginBottom: 14 }}>
+            <div style={{ fontSize: 12.5, color: "#3fae6a", marginBottom: 10 }}>
+              {fileName} — {toImport.length} productos listos para importar{withCost > 0 ? ` (${withCost} con costo)` : ""}
+              {skipped > 0 && <span style={{ color: "#e2b34b" }}> · {skipped} ya existen en esta categoría (mismo código) y se omiten</span>}
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11.5, color: "#9a9994", marginBottom: 6 }}>Categoría de estos productos</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                {SECTIONS.map((sec) => {
+                  const Ic = sec.icon; const active = section === sec.id;
+                  return (
+                    <button key={sec.id} type="button" onClick={() => setSection(sec.id)} aria-pressed={active}
+                      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "9px 4px", borderRadius: 10, fontSize: 12.5, fontWeight: 700,
+                        border: active ? "2px solid #e2823c" : "1px solid #2a2a2e", background: active ? "rgba(226,130,60,0.14)" : "#1a1a1c", color: active ? "#e2823c" : "#c9c8c3" }}>
+                      <Ic size={18} /> {sec.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="m164-scrollbar" style={{ maxHeight: 260, overflowY: "auto", border: "1px solid #232326", borderRadius: 8, marginBottom: 14 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
                 <thead>
                   <tr style={{ position: "sticky", top: 0, background: "#1a1a1c" }}>
-                    {["Código","Medida","Nombre","Logo","Color","Precio","Cant."].map((h) => (
+                    {["Código", "Nombre", "Precio", "Cant.", "Costo"].map((h) => (
                       <th key={h} style={{ padding: "6px 8px", textAlign: "left", color: "#9a9994", fontWeight: 600 }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r, i) => (
-                    <tr key={i} style={{ borderTop: "1px solid #1d1d20" }}>
+                  {prepared.map((r, i) => (
+                    <tr key={i} style={{ borderTop: "1px solid #1d1d20", opacity: r.duplicate ? 0.45 : 1 }}>
                       <td style={{ padding: "5px 8px", color: "#e2823c", fontWeight: 600 }}>{r.code}</td>
-                      <td style={{ padding: "5px 8px" }}>{r.diameter}</td>
-                      <td style={{ padding: "5px 8px" }}>{r.name}</td>
-                      <td style={{ padding: "5px 8px" }}>{r.logo}</td>
-                      <td style={{ padding: "5px 8px" }}>{r.color}</td>
+                      <td style={{ padding: "5px 8px" }}>{[r.diameter, r.name, r.logo, r.color].filter((t) => t && t.toUpperCase() !== "NA").join(" ")}{r.duplicate ? " (ya existe)" : ""}</td>
                       <td style={{ padding: "5px 8px" }}>{money(r.price)}</td>
                       <td style={{ padding: "5px 8px" }}>{r.qty}</td>
+                      <td style={{ padding: "5px 8px", color: r.cost === null ? "#7a7974" : "#e2b34b" }}>{r.cost === null ? "—" : money(r.cost)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { setRows([]); setFileName(""); }} style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "10px", fontSize: 13 }}>Elegir otro archivo</button>
-              <button onClick={confirm} style={{ flex: 1, background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "10px", fontSize: 13 }}>Importar {rows.length} productos</button>
+              <button onClick={() => { setRows([]); setFileName(""); }} style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "10px", fontSize: 13 }}>Elegir otro</button>
+              <button onClick={confirm} disabled={toImport.length === 0} style={{ flex: 1, background: toImport.length === 0 ? "#3a3a3e" : "#e2823c", border: "none", color: toImport.length === 0 ? "#7a7974" : "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "10px", fontSize: 13 }}>Importar {toImport.length} producto{toImport.length === 1 ? "" : "s"}</button>
             </div>
           </>
         )}
@@ -2316,7 +2360,7 @@ function ImportExcelModal({ onClose, onImport }) {
 }
 
 function NewProductModal({ onClose, onSave, initial, title, defaultSection = "ruedas" }) {
-  const [form, setForm] = useState(() => ({ code: "", diameter: "", name: "", logo: "NA", color: "NA", price: "", qty: "", section: defaultSection, ...(initial || {}) }));
+  const [form, setForm] = useState(() => ({ code: "", diameter: "", name: "", logo: "NA", color: "NA", price: "", qty: "", cost: "", section: defaultSection, ...(initial || {}) }));
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const isWheels = (form.section || "ruedas") === "ruedas";
   const canSave = (form.name || "").trim() && form.price !== "" && (!isWheels || (form.code || "").trim());
@@ -2359,9 +2403,16 @@ function NewProductModal({ onClose, onSave, initial, title, defaultSection = "ru
             <input type="number" value={form.qty} onChange={set("qty")} style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "9px 10px", color: "#f3f1ec", fontSize: 13.5 }} />
           </div>
         </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 11.5, color: "#9a9994", display: "block", marginBottom: 4 }}>Costo por unidad con envío (usd) — opcional</label>
+          <input type="number" step="0.01" min="0" value={form.cost === null || form.cost === undefined ? "" : form.cost} onChange={set("cost")} placeholder="Ej.: 3.25"
+            style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "9px 10px", color: "#f3f1ec", fontSize: 13.5 }} />
+          <div style={{ fontSize: 10.5, color: "#7a7974", marginTop: 4, lineHeight: 1.4 }}>Solo lo ves tú. Se usa en el Reporte contable para calcular la ganancia y el valor del stock a costo.</div>
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={{ flex: 1, background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "10px", fontSize: 13 }}>Cancelar</button>
-          <button disabled={!canSave} onClick={() => onSave({ ...form, section: form.section || "ruedas", price: parseFloat(form.price) || 0, qty: parseInt(form.qty) || 0 })}
+          <button disabled={!canSave} onClick={() => onSave({ ...form, section: form.section || "ruedas", price: parseFloat(form.price) || 0, qty: parseInt(form.qty) || 0,
+            cost: form.cost === "" || form.cost === null || form.cost === undefined || isNaN(parseFloat(form.cost)) ? null : parseFloat(form.cost) })}
             style={{ flex: 1, background: canSave ? "#e2823c" : "#3a3a3e", border: "none", color: canSave ? "#0c0c0d" : "#7a7974", fontWeight: 700, borderRadius: 8, padding: "10px", fontSize: 13 }}>
             Guardar
           </button>
@@ -2371,7 +2422,7 @@ function NewProductModal({ onClose, onSave, initial, title, defaultSection = "ru
   );
 }
 
-function AdminProductos({ products, setAddedProducts, overrides, setOverrides }) {
+function AdminProductos({ products, setAddedProducts, overrides, setOverrides, costs = {}, saveCosts = async () => false }) {
   const [query, setQuery] = useState("");
   const [photoTarget, setPhotoTarget] = useState(null);
   const [showNew, setShowNew] = useState(false);
@@ -2766,12 +2817,13 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
             const newProduct = buildNewProduct(form, id);
             setAddedProducts((prev) => [...prev, newProduct]);
             fbSaveDoc("added_products", id, newProduct);
+            if (form.cost !== null && form.cost !== undefined) saveCosts({ [id]: form.cost });
             setShowNew(false);
           }} />
       )}
       {editTarget && (
         <NewProductModal title={`Editar — ${editTarget.code}`} onClose={() => setEditTarget(null)}
-          initial={{ code: editTarget.code, diameter: editTarget.diameter, name: editTarget.name, logo: editTarget.logo, color: editTarget.color, price: editTarget.price, qty: editTarget.qty, section: sectionOf(editTarget) }}
+          initial={{ code: editTarget.code, diameter: editTarget.diameter, name: editTarget.name, logo: editTarget.logo, color: editTarget.color, price: editTarget.price, qty: editTarget.qty, cost: costOf(costs, editTarget.id) === null ? "" : costOf(costs, editTarget.id), section: sectionOf(editTarget) }}
           onSave={(form) => {
             const sec = form.section || "ruedas";
             const isW = sec === "ruedas";
@@ -2781,33 +2833,604 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides })
               // el stock solo se escribe si lo cambiaste, para no pisar descuentos de pedidos hechos mientras el formulario estaba abierto
               ...(Number(form.qty) !== Number(editTarget.qty) ? { qty: form.qty } : {}),
             });
+            if (form.cost !== costOf(costs, editTarget.id)) saveCosts({ [editTarget.id]: form.cost }); // null = quitar el costo
             setEditTarget(null);
           }} />
       )}
       {duplicateTarget && (
         <NewProductModal title={`Duplicar — ${duplicateTarget.code}`} onClose={() => setDuplicateTarget(null)}
-          initial={{ code: duplicateTarget.code, diameter: duplicateTarget.diameter, name: duplicateTarget.name, logo: duplicateTarget.logo, color: duplicateTarget.color, price: duplicateTarget.price, qty: duplicateTarget.qty, section: sectionOf(duplicateTarget) }}
+          initial={{ code: duplicateTarget.code, diameter: duplicateTarget.diameter, name: duplicateTarget.name, logo: duplicateTarget.logo, color: duplicateTarget.color, price: duplicateTarget.price, qty: duplicateTarget.qty, cost: costOf(costs, duplicateTarget.id) === null ? "" : costOf(costs, duplicateTarget.id), section: sectionOf(duplicateTarget) }}
           onSave={(form) => {
             const id = "new-" + Date.now();
             const newProduct = buildNewProduct(form, id);
             setAddedProducts((prev) => [...prev, newProduct]);
             fbSaveDoc("added_products", id, newProduct);
+            if (form.cost !== null && form.cost !== undefined) saveCosts({ [id]: form.cost });
             setDuplicateTarget(null);
           }} />
       )}
       {showImport && (
-        <ImportExcelModal onClose={() => setShowImport(false)}
-          onImport={(importedRows) => {
+        <ImportExcelModal onClose={() => setShowImport(false)} existingProducts={products}
+          onImport={(importedRows, sec) => {
+            const stamp = Date.now();
             const newOnes = importedRows.map((r, i) => ({
-              id: "new-" + Date.now() + "-" + i,
+              id: "new-" + stamp + "-" + i,
               code: r.code, diameter: r.diameter, name: r.name, logo: r.logo, color: r.color,
-              price: r.price, qty: r.qty, category: "Otros", isNew: true,
+              price: r.price, qty: r.qty, category: "Otros", section: sec || "ruedas", isNew: true,
               sizeTag: sizeTagOf(r.diameter), colorTags: colorTagsOf(r.color), brandTag: brandTagOf(r.logo),
             }));
             setAddedProducts((prev) => [...prev, ...newOnes]);
             newOnes.forEach((p) => fbSaveDoc("added_products", p.id, p));
+            const patch = {};
+            newOnes.forEach((p, i) => { const c = importedRows[i].cost; if (c !== null && c !== undefined && isFinite(c)) patch[p.id] = c; });
+            if (Object.keys(patch).length > 0) saveCosts(patch);
           }} />
       )}
+    </div>
+  );
+}
+
+/* ---------------- Admin: Reporte contable ---------------- */
+
+const SALE_STATUSES = ["Pagado", "Empacado", "Enviado"]; // ventas confirmadas (pagadas por completo)
+const OPEN_STATUSES = ["Pendiente", "Pago Parcial"];      // pedidos abiertos (por cobrar)
+const REPORT_COLORS = { revenue: "#6a94c9", profit: "#3fae6a", cost: "#e2b34b", sale: "#e2823c", loss: "#e2736b" };
+const MONTHS_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+// Costo por unidad (con envío) de un producto, o null si no está cargado. Los costos viven solo en Firestore (meta/costs, solo admin).
+function costOf(costs, id) {
+  const c = costs ? costs[id] : undefined;
+  if (c === undefined || c === null || c === "" || isNaN(Number(c))) return null;
+  return Number(c);
+}
+function periodRange(preset, now = Date.now()) {
+  const d = new Date(now);
+  if (preset === "mes") return [new Date(d.getFullYear(), d.getMonth(), 1).getTime(), Infinity];
+  if (preset === "anio") return [new Date(d.getFullYear(), 0, 1).getTime(), Infinity];
+  if (preset === "30") return [now - 30 * 86400000, Infinity];
+  if (preset === "7") return [now - 7 * 86400000, Infinity];
+  return null;
+}
+function bucketOf(ts, gran) {
+  const d = new Date(ts);
+  if (gran === "month") return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+  if (gran === "week") return new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7)).getTime();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+function nextBucket(ts, gran) {
+  const d = new Date(ts);
+  if (gran === "month") return new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+  if (gran === "week") return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7).getTime();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+}
+function bucketLabel(ts, gran) {
+  const d = new Date(ts);
+  if (gran === "month") return `${MONTHS_ES[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
+  return `${d.getDate()} ${MONTHS_ES[d.getMonth()]}`;
+}
+
+// Calcula todo el reporte. Función pura (sin React) para poder probarla.
+//  - Venta = pedido Pagado/Empacado/Enviado; ingreso = precio × cantidad, con el descuento del pedido repartido proporcionalmente.
+//  - Ganancia = ingreso − costo, solo de los productos que tienen costo cargado (los demás se muestran aparte como "sin costo").
+//  - Stock = unidades disponibles hoy en el catálogo, a precio de venta y a costo.
+function buildReport({ orders, products, costs, section = "todas", productIds = [], period = null, onlyNoCost = false }) {
+  const sel = new Set(productIds);
+  const byId = new Map();
+  (products || []).forEach((p) => byId.set(p.id, p));
+  const rowsMap = new Map();
+  const getRow = (id, snap) => {
+    if (!rowsMap.has(id)) {
+      const p = byId.get(id);
+      rowsMap.set(id, {
+        id, code: p ? p.code : (snap && snap.code) || id, name: p ? p.name : (snap && snap.name) || "",
+        color: p ? p.color : (snap && snap.color) || "", section: p ? sectionOf(p) : "ruedas", inCatalog: !!p,
+        soldQty: 0, revenue: 0, costedRevenue: 0, noCostRevenue: 0, cogs: 0,
+        stockQty: 0, stockCost: 0, stockSale: 0,
+        unitPrice: p ? Number(p.price) || 0 : Number(snap && snap.price) || 0, unitCost: costOf(costs, id),
+      });
+    }
+    return rowsMap.get(id);
+  };
+  const itemOk = (id) => {
+    if (sel.size > 0 && !sel.has(id)) return false;
+    if (section !== "todas") {
+      const p = byId.get(id);
+      if ((p ? sectionOf(p) : "ruedas") !== section) return false;
+    }
+    return true;
+  };
+
+  let openCommitted = 0, openReceivable = 0;
+  const events = [];
+  (orders || []).forEach((o) => {
+    if (!o || !Array.isArray(o.items)) return;
+    const gross = o.items.reduce((t, it) => t + (Number(it.price) || 0) * (Number(it.qty) || 0), 0);
+    const net = Math.max(0, gross - (Number(o.discount) || 0));
+    const factor = gross > 0 ? net / gross : 0;
+    if (SALE_STATUSES.includes(o.status)) {
+      if (period && (o.createdAt < period[0] || o.createdAt > period[1])) return;
+      let rev = 0, prof = 0, any = false;
+      o.items.forEach((it) => {
+        if (!itemOk(it.id)) return;
+        any = true;
+        const qty = Number(it.qty) || 0;
+        const r = (Number(it.price) || 0) * qty * factor;
+        const row = getRow(it.id, it);
+        row.soldQty += qty; row.revenue += r; rev += r;
+        const c = costOf(costs, it.id);
+        if (c !== null) { row.costedRevenue += r; row.cogs += c * qty; prof += r - c * qty; }
+        else row.noCostRevenue += r;
+      });
+      if (any) events.push({ ts: o.createdAt, revenue: rev, profit: prof });
+    } else if (OPEN_STATUSES.includes(o.status)) {
+      const left = net > 0 ? Math.max(0, net - (Number(o.advancePaid) || 0)) / net : 0;
+      o.items.forEach((it) => {
+        if (!itemOk(it.id)) return;
+        const part = (Number(it.price) || 0) * (Number(it.qty) || 0) * factor;
+        openCommitted += part; openReceivable += part * left;
+      });
+    }
+  });
+
+  (products || []).forEach((p) => {
+    if (p.adminOnly || p.archived || p.deleted || !itemOk(p.id)) return;
+    const qty = Math.max(0, Number(p.qty) || 0);
+    if (qty <= 0) return;
+    const row = getRow(p.id, p);
+    row.stockQty = qty;
+    row.stockSale = qty * (Number(p.price) || 0);
+    if (row.unitCost !== null) row.stockCost = qty * row.unitCost;
+  });
+
+  let rows = Array.from(rowsMap.values()).filter((r) => r.soldQty > 0 || r.stockQty > 0).map((r) => {
+    r.profit = r.costedRevenue - r.cogs;
+    r.margin = r.costedRevenue > 0 ? r.profit / r.costedRevenue : null;
+    r.hasCost = r.unitCost !== null;
+    return r;
+  });
+  const sum = (f) => rows.reduce((t, r) => t + f(r), 0);
+  const costedRevenue = sum((r) => r.costedRevenue);
+  const cogs = sum((r) => r.cogs);
+  const kpi = {
+    orderCount: events.length, revenue: sum((r) => r.revenue), cogs, profit: costedRevenue - cogs,
+    margin: costedRevenue > 0 ? (costedRevenue - cogs) / costedRevenue : null,
+    soldQty: sum((r) => r.soldQty), revenueNoCost: sum((r) => r.noCostRevenue),
+    stockQty: sum((r) => r.stockQty), stockSale: sum((r) => r.stockSale), stockCost: sum((r) => r.stockCost),
+    stockPotential: sum((r) => (r.hasCost ? r.stockSale - r.stockCost : 0)),
+    openCommitted, openReceivable, noCostCount: rows.filter((r) => !r.hasCost).length,
+  };
+  const byCategory = {};
+  SECTIONS.forEach((sec) => { byCategory[sec.id] = { revenue: 0, profit: 0, stockCost: 0, stockSale: 0 }; });
+  rows.forEach((r) => {
+    const c = byCategory[r.section] || (byCategory[r.section] = { revenue: 0, profit: 0, stockCost: 0, stockSale: 0 });
+    c.revenue += r.revenue; c.profit += r.profit; c.stockCost += r.stockCost; c.stockSale += r.stockSale;
+  });
+  if (onlyNoCost) rows = rows.filter((r) => !r.hasCost);
+
+  // serie en el tiempo: día / semana / mes según el rango de fechas
+  let series = [], gran = "month";
+  if (events.length > 0) {
+    const minTs = Math.min(...events.map((e) => e.ts)), maxTs = Math.max(...events.map((e) => e.ts));
+    const spanDays = (maxTs - minTs) / 86400000;
+    gran = spanDays <= 45 ? "day" : spanDays <= 180 ? "week" : "month";
+    const acc = new Map();
+    events.forEach((e) => {
+      const k = bucketOf(e.ts, gran);
+      const b = acc.get(k) || { revenue: 0, profit: 0 };
+      b.revenue += e.revenue; b.profit += e.profit; acc.set(k, b);
+    });
+    for (let t = bucketOf(minTs, gran); t <= maxTs; t = nextBucket(t, gran)) {
+      const b = acc.get(t) || { revenue: 0, profit: 0 };
+      series.push({ ts: t, label: bucketLabel(t, gran), revenue: b.revenue, profit: b.profit });
+    }
+  }
+  return { rows, kpi, byCategory, series, gran };
+}
+
+function niceCeil(v) {
+  if (!(v > 0)) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / mag;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * mag;
+}
+const shortMoney = (v) => {
+  const a = Math.abs(v);
+  const t = a >= 1000 ? (a / 1000).toFixed(a >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k" : String(Math.round(a * 100) / 100);
+  return (v < 0 ? "-$" : "$") + t;
+};
+
+function ChartEmpty({ text }) {
+  return <div style={{ color: "#7a7974", fontSize: 12.5, padding: "34px 10px", textAlign: "center", lineHeight: 1.5 }}>{text || "Sin datos con este filtro."}</div>;
+}
+
+// Barras agrupadas (SVG, sin librerías): data = [{ label, values: [v1, v2...] }], series = [{ name, color }]
+function GroupedBars({ data, series, height = 230, empty }) {
+  if (!data || data.length === 0) return <ChartEmpty text={empty} />;
+  const vals = data.flatMap((d) => d.values);
+  const hi = niceCeil(Math.max(0, ...vals));
+  const minV = Math.min(0, ...vals);
+  const lo = minV < 0 ? -niceCeil(-minV) : 0;
+  const slot = Math.max(38, series.length * 17 + 16);
+  const padL = 50, padR = 10, padT = 12, padB = 30;
+  const W = Math.max(340, padL + padR + data.length * slot), H = height;
+  const y = (v) => padT + (H - padT - padB) * (1 - (v - lo) / (hi - lo));
+  const bw = Math.min(22, (slot - 10) / series.length);
+  const ticks = [0, 1, 2, 3, 4].map((i) => lo + ((hi - lo) * i) / 4);
+  return (
+    <div>
+      <div className="m164-scrollbar" style={{ overflowX: "auto" }}>
+        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} style={{ display: "block", maxWidth: "none" }} role="img">
+          {ticks.map((t, i) => (
+            <g key={i}>
+              <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="#232326" />
+              <text x={padL - 6} y={y(t) + 3.5} textAnchor="end" fontSize="10" fill="#7a7974">{shortMoney(t)}</text>
+            </g>
+          ))}
+          <line x1={padL} x2={W - padR} y1={y(0)} y2={y(0)} stroke="#3a3a3e" />
+          {data.map((d, i) => {
+            const cx = padL + slot * i + slot / 2;
+            return (
+              <g key={i}>
+                {d.values.map((v, k) => {
+                  if (!v) return null;
+                  const x = cx - (series.length * bw) / 2 + k * bw;
+                  const y0 = y(0), y1 = y(v);
+                  return (
+                    <rect key={k} x={x + 1} y={Math.min(y0, y1)} width={bw - 2} height={Math.max(1, Math.abs(y1 - y0))} rx="2" fill={series[k].color}>
+                      <title>{`${d.label} · ${series[k].name}: ${money(v)}`}</title>
+                    </rect>
+                  );
+                })}
+                <text x={cx} y={H - 10} textAnchor="middle" fontSize="10" fill="#9a9994">{d.label}</text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6, fontSize: 11.5, color: "#9a9994" }}>
+        {series.map((sr) => (
+          <span key={sr.name} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: sr.color }} /> {sr.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Barras horizontales: rows = [{ key, label, value }]
+function HBarChart({ rows, color = REPORT_COLORS.profit, empty }) {
+  if (!rows || rows.length === 0) return <ChartEmpty text={empty} />;
+  const max = Math.max(...rows.map((r) => Math.abs(r.value)), 0.0001);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {rows.map((r) => (
+        <div key={r.key} title={r.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5 }}>
+          <div style={{ width: 128, flexShrink: 0, color: "#c9c8c3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label}</div>
+          <div style={{ flex: 1, background: "#1a1a1c", borderRadius: 4, height: 14 }}>
+            <div style={{ width: `${Math.max(2, (Math.abs(r.value) / max) * 100)}%`, height: "100%", borderRadius: 4, background: r.value < 0 ? REPORT_COLORS.loss : color }} />
+          </div>
+          <div style={{ width: 74, textAlign: "right", fontWeight: 700, color: r.value < 0 ? REPORT_COLORS.loss : "#f3f1ec" }}>{money(r.value)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function KpiCard({ label, value, sub, color }) {
+  return (
+    <div style={{ background: "#151516", border: "1px solid #232326", borderRadius: 12, padding: "12px 14px", minWidth: 0 }}>
+      <div style={{ fontSize: 10.5, color: "#9a9994", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.03em" }}>{label}</div>
+      <div className="disp" style={{ fontSize: 22, fontWeight: 700, color: color || "#f3f1ec", marginTop: 4, overflowWrap: "anywhere" }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: "#7a7974", marginTop: 3, lineHeight: 1.35 }}>{sub}</div>}
+    </div>
+  );
+}
+
+// Selector simple de productos (con buscador y casillas)
+function ProductPicker({ options, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const boxRef = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const h = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  const sel = new Set(selected);
+  const ql = q.trim().toLowerCase();
+  const matches = options.filter((o) => !ql || o.label.toLowerCase().includes(ql));
+  const toggle = (id) => onChange(sel.has(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  return (
+    <div ref={boxRef} style={{ position: "relative" }}>
+      <button onClick={() => setOpen((o) => !o)} aria-expanded={open}
+        style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 600,
+          background: selected.length > 0 ? "rgba(226,130,60,0.15)" : "#17171a", border: selected.length > 0 ? "1px solid #e2823c" : "1px solid #2a2a2e",
+          color: selected.length > 0 ? "#e2823c" : "#c9c8c3" }}>
+        <Package size={14} /> Productos: {selected.length === 0 ? "Todos" : `${selected.length} seleccionado${selected.length === 1 ? "" : "s"}`}
+        <ChevronDown size={13} style={{ transform: open ? "rotate(180deg)" : "none" }} />
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40, width: "min(420px, 88vw)", background: "#141415", border: "1px solid #2a2a2e", borderRadius: 12, padding: 10, boxShadow: "0 12px 30px rgba(0,0,0,0.6)" }}>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por código, nombre o color..." autoFocus
+            style={{ width: "100%", background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 8, padding: "8px 10px", color: "#f3f1ec", fontSize: 13, marginBottom: 8 }} />
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 6 }}>
+            <button onClick={() => onChange(Array.from(new Set([...selected, ...matches.map((o) => o.id)])))} disabled={matches.length === 0}
+              style={{ background: "none", border: "none", color: "#e2823c", padding: 0 }}>Seleccionar los {matches.length} que se ven</button>
+            <button onClick={() => onChange([])} style={{ background: "none", border: "none", color: "#9a9994", padding: 0 }}>Limpiar</button>
+          </div>
+          <div className="m164-scrollbar" style={{ maxHeight: 260, overflowY: "auto" }}>
+            {matches.slice(0, 80).map((o) => (
+              <label key={o.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px", fontSize: 12.5, color: "#e4e2dc", cursor: "pointer", borderRadius: 6 }}>
+                <input type="checkbox" checked={sel.has(o.id)} onChange={() => toggle(o.id)} />
+                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.label}</span>
+              </label>
+            ))}
+            {matches.length > 80 && <div style={{ fontSize: 11, color: "#7a7974", padding: "6px 4px" }}>Mostrando 80 de {matches.length}. Escribe en el buscador para afinar.</div>}
+            {matches.length === 0 && <div style={{ fontSize: 12, color: "#7a7974", padding: "8px 4px" }}>No hay productos con esa búsqueda.</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminReporte({ orders, products, costs, saveCosts }) {
+  const [period, setPeriod] = useState("todo");
+  const [section, setSection] = useState("todas");
+  const [selected, setSelected] = useState([]);
+  const [onlyNoCost, setOnlyNoCost] = useState(false);
+  const [topMetric, setTopMetric] = useState("profit");
+  const [sortKey, setSortKey] = useState("profit");
+  const [sortDir, setSortDir] = useState("desc");
+  const [limit, setLimit] = useState(50);
+  const costFileRef = useRef(null);
+
+  const hour = Math.floor(Date.now() / 3600000);
+  const range = useMemo(() => periodRange(period), [period, hour]);
+  const report = useMemo(
+    () => buildReport({ orders, products, costs, section, productIds: selected, period: range, onlyNoCost }),
+    [orders, products, costs, section, selected, range, onlyNoCost]
+  );
+  const { kpi } = report;
+
+  const options = useMemo(() => {
+    const seen = new Set(); const list = [];
+    (products || []).forEach((p) => {
+      seen.add(p.id);
+      const col = p.color && String(p.color).toUpperCase() !== "NA" ? " · " + p.color : "";
+      list.push({ id: p.id, section: sectionOf(p), label: `${p.code} ${p.name}${col}`.replace(/\s+/g, " ").trim() });
+    });
+    (orders || []).forEach((o) => (o.items || []).forEach((it) => {
+      if (!seen.has(it.id)) { seen.add(it.id); list.push({ id: it.id, section: "ruedas", label: `${it.code || it.id} ${it.name || ""} (ya no está en el catálogo)`.trim() }); }
+    }));
+    return list;
+  }, [products, orders]);
+  const optionsShown = section === "todas" ? options : options.filter((o) => o.section === section);
+  const changeSection = (sec) => {
+    setSection(sec);
+    setSelected((prev) => prev.filter((id) => sec === "todas" || ((options.find((o) => o.id === id) || {}).section === sec)));
+    setLimit(50);
+  };
+  const labelOf = (id) => (options.find((o) => o.id === id) || { label: id }).label;
+
+  const cols = [
+    { key: "name", label: "Producto", text: true },
+    { key: "soldQty", label: "Vendidas", fmt: (v) => fmtNum(v) },
+    { key: "revenue", label: "Ventas", fmt: money },
+    { key: "cogs", label: "Costo vendido", fmt: money },
+    { key: "profit", label: "Ganancia", fmt: money, tone: true },
+    { key: "margin", label: "Margen", fmt: (v) => (v === null ? "—" : (v * 100).toFixed(1) + "%") },
+    { key: "stockQty", label: "Stock (uds)", fmt: (v) => fmtNum(v) },
+    { key: "stockCost", label: "Stock a costo", fmt: money },
+    { key: "stockSale", label: "Stock a venta", fmt: money },
+    { key: "unitCost", label: "Costo unit.", fmt: (v) => (v === null ? "sin costo" : money(v)) },
+    { key: "unitPrice", label: "Precio unit.", fmt: money },
+  ];
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...report.rows].sort((a, b) => {
+      if (sortKey === "name") return dir * String(a.code + a.name).localeCompare(String(b.code + b.name));
+      const av = a[sortKey], bv = b[sortKey];
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+      return dir * (av - bv);
+    });
+  }, [report.rows, sortKey, sortDir]);
+  const clickSort = (k) => {
+    if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(k); setSortDir(k === "name" ? "asc" : "desc"); }
+  };
+
+  const timeData = report.series.map((x) => ({ label: x.label, values: [x.revenue, x.profit] }));
+  const catData = SECTIONS.filter((x) => section === "todas" || x.id === section)
+    .map((x) => ({ label: x.label, values: [report.byCategory[x.id].stockCost, report.byCategory[x.id].stockSale] }))
+    .filter((d) => d.values[0] || d.values[1]);
+  const topRows = [...report.rows].filter((r) => r.soldQty > 0 && (topMetric === "revenue" || r.hasCost))
+    .sort((a, b) => b[topMetric] - a[topMetric]).slice(0, 8)
+    .map((r) => ({ key: r.id, label: `${r.code} ${r.name}`.trim(), value: r[topMetric] }));
+
+  const exportCSV = () => {
+    const head = ["Código", "Producto", "Color", "Categoría", "Vendidas", "Ventas USD", "Costo vendido USD", "Ganancia USD", "Margen", "Stock uds", "Stock a costo USD", "Stock a precio de venta USD", "Costo unitario USD", "Precio unitario USD"];
+    const lines = sorted.map((r) => [r.code, r.name, r.color, r.section, r.soldQty, r.revenue.toFixed(2), r.cogs.toFixed(2), r.profit.toFixed(2),
+      r.margin === null ? "" : (r.margin * 100).toFixed(1) + "%", r.stockQty, r.stockCost.toFixed(2), r.stockSale.toFixed(2), r.unitCost === null ? "" : r.unitCost.toFixed(4), r.unitPrice.toFixed(2)]);
+    downloadCSV(`reporte_contable_${new Date().toISOString().slice(0, 10)}.csv`, [head, ...lines]);
+  };
+
+  const costsLoaded = Object.keys(costs || {}).length;
+  const importCosts = async (files) => {
+    const f = files && files[0];
+    if (!f) return;
+    try {
+      const parsed = JSON.parse(await f.text());
+      const map = parsed && parsed.map && typeof parsed.map === "object" ? parsed.map : parsed;
+      const known = new Set((products || []).map((x) => x.id));
+      const patch = {}; let unknown = 0;
+      Object.entries(map).forEach(([id, v]) => {
+        const n = Number(v);
+        if (v === null || v === "" || !isFinite(n) || n < 0) return;
+        patch[id] = Math.round(n * 10000) / 10000;
+        if (!known.has(id)) unknown++;
+      });
+      const count = Object.keys(patch).length;
+      if (count === 0) { window.alert("No encontré costos válidos en ese archivo."); return; }
+      if (!window.confirm(`Se cargarán ${count} costos${unknown ? ` (${unknown} no corresponden a productos del catálogo actual)` : ""}. Si un producto ya tenía costo, se reemplaza. ¿Continuar?`)) return;
+      const ok = await saveCosts(patch);
+      window.alert(ok ? `Listo: ${count} costos guardados.` : "No se pudieron guardar los costos. Verifica que hayas publicado las reglas de Firestore con el permiso para 'meta/costs'.");
+    } catch (e) {
+      window.alert("No pude leer el archivo. Debe ser el archivo .json de costos.");
+    }
+  };
+
+  const pill = (active) => ({
+    padding: "7px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 600,
+    border: active ? "1px solid #e2823c" : "1px solid #2a2a2e", background: active ? "rgba(226,130,60,0.15)" : "transparent", color: active ? "#e2823c" : "#9a9994",
+  });
+  const card = { background: "#151516", border: "1px solid #232326", borderRadius: 12, padding: 14 };
+  const grid = (min) => ({ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`, gap: 10 });
+  const h2 = { fontSize: 12.5, fontWeight: 700, color: "#e9e7e1", marginBottom: 10 };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        <div>
+          <div className="disp" style={{ fontSize: 17, fontWeight: 700 }}>Reporte contable</div>
+          <div style={{ fontSize: 11.5, color: "#7a7974", marginTop: 2 }}>Ventas, ganancias y valor de la mercancía. Costos cargados: {costsLoaded}.</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={() => costFileRef.current.click()} style={{ ...pill(false), display: "flex", alignItems: "center", gap: 6, color: "#c9c8c3" }}><Upload size={13} /> Cargar costos (.json)</button>
+          <button onClick={exportCSV} style={{ ...pill(false), display: "flex", alignItems: "center", gap: 6, color: "#c9c8c3" }}><Download size={13} /> Exportar CSV</button>
+          <input ref={costFileRef} type="file" accept=".json,application/json" style={{ display: "none" }} onChange={(e) => { importCosts(e.target.files); e.target.value = ""; }} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
+        <select value={period} onChange={(e) => setPeriod(e.target.value)} aria-label="Período"
+          style={{ background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "8px 10px", color: "#c9c8c3", fontSize: 12.5 }}>
+          <option value="todo">Todo el tiempo</option>
+          <option value="mes">Este mes</option>
+          <option value="30">Últimos 30 días</option>
+          <option value="7">Últimos 7 días</option>
+          <option value="anio">Este año</option>
+        </select>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {[["todas", "Todas"], ...SECTIONS.map((x) => [x.id, x.label])].map(([id, label]) => (
+            <button key={id} onClick={() => changeSection(id)} aria-pressed={section === id} style={pill(section === id)}>{label}</button>
+          ))}
+        </div>
+        <ProductPicker options={optionsShown} selected={selected} onChange={(ids) => { setSelected(ids); setLimit(50); }} />
+      </div>
+      {selected.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12, alignItems: "center" }}>
+          {selected.slice(0, 6).map((id) => (
+            <span key={id} style={{ display: "flex", alignItems: "center", gap: 5, background: "rgba(226,130,60,0.15)", border: "1px solid #e2823c", color: "#e2823c", borderRadius: 999, padding: "4px 8px 4px 11px", fontSize: 11.5, fontWeight: 600, maxWidth: 260 }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{labelOf(id)}</span>
+              <button onClick={() => setSelected(selected.filter((x) => x !== id))} aria-label="Quitar" style={{ background: "none", border: "none", color: "#e2823c", display: "flex", padding: 0 }}><X size={12} /></button>
+            </span>
+          ))}
+          {selected.length > 6 && <span style={{ fontSize: 11.5, color: "#9a9994" }}>+{selected.length - 6} más</span>}
+          <button onClick={() => setSelected([])} style={{ background: "none", border: "none", color: "#9a9994", fontSize: 11.5, textDecoration: "underline" }}>Quitar todos</button>
+        </div>
+      )}
+
+      {kpi.noCostCount > 0 && (
+        <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 10, fontSize: 12, lineHeight: 1.5, border: "1px solid #5a4a1e", background: "#241f12", color: "#e8d9a8" }}>
+          <b>{kpi.noCostCount}</b> producto{kpi.noCostCount === 1 ? "" : "s"} con ventas o stock no tiene{kpi.noCostCount === 1 ? "" : "n"} costo cargado. La ganancia y el "stock a costo" no los incluyen.
+          Agrega el costo con el lápiz (editar) en Productos o con "Cargar costos".{" "}
+          <label style={{ cursor: "pointer", textDecoration: "underline" }}>
+            <input type="checkbox" checked={onlyNoCost} onChange={(e) => { setOnlyNoCost(e.target.checked); setLimit(50); }} style={{ marginRight: 5 }} />Ver solo esos en la tabla
+          </label>
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: "#9a9994", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>Ventas · pedidos Pagado, Empacado y Enviado</div>
+      <div style={{ ...grid(170), marginBottom: 16 }}>
+        <KpiCard label="Ventas" value={money(kpi.revenue)} sub={`${fmtNum(kpi.soldQty)} unidades · ${fmtNum(kpi.orderCount)} pedido${kpi.orderCount === 1 ? "" : "s"}`} color={REPORT_COLORS.revenue} />
+        <KpiCard label="Costo de lo vendido" value={money(kpi.cogs)} sub="Solo productos con costo cargado" color={REPORT_COLORS.cost} />
+        <KpiCard label="Ganancia" value={money(kpi.profit)} sub={`Margen ${kpi.margin === null ? "—" : (kpi.margin * 100).toFixed(1) + "%"}`} color={kpi.profit < 0 ? REPORT_COLORS.loss : REPORT_COLORS.profit} />
+        <KpiCard label="Ventas sin costo" value={money(kpi.revenueNoCost)} sub="No entran en la ganancia" />
+      </div>
+      <div style={{ fontSize: 11, color: "#9a9994", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>Mercancía · stock disponible hoy</div>
+      <div style={{ ...grid(170), marginBottom: 18 }}>
+        <KpiCard label="Stock a precio de venta" value={money(kpi.stockSale)} sub={`${fmtNum(kpi.stockQty)} unidades`} color={REPORT_COLORS.sale} />
+        <KpiCard label="Stock a costo" value={money(kpi.stockCost)} sub="Mercancía al costo con envío" color={REPORT_COLORS.cost} />
+        <KpiCard label="Ganancia potencial" value={money(kpi.stockPotential)} sub="Si se vende todo al precio actual" color={REPORT_COLORS.profit} />
+        <KpiCard label="Por cobrar" value={money(kpi.openReceivable)} sub={`Pedidos abiertos: ${money(kpi.openCommitted)} (Pendiente y Pago Parcial)`} />
+      </div>
+
+      <div style={{ ...grid(340), marginBottom: 14 }}>
+        <div style={card}>
+          <div style={h2}>Ventas y ganancia en el tiempo</div>
+          <GroupedBars data={timeData} series={[{ name: "Ventas", color: REPORT_COLORS.revenue }, { name: "Ganancia", color: REPORT_COLORS.profit }]} empty="Todavía no hay ventas confirmadas con este filtro." />
+        </div>
+        <div style={card}>
+          <div style={h2}>Stock en dinero por categoría</div>
+          <GroupedBars data={catData} series={[{ name: "A costo", color: REPORT_COLORS.cost }, { name: "A precio de venta", color: REPORT_COLORS.sale }]} empty="No hay stock con este filtro." />
+        </div>
+      </div>
+      <div style={{ ...card, marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          <div style={{ ...h2, marginBottom: 0 }}>Top productos</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => setTopMetric("profit")} style={pill(topMetric === "profit")}>Por ganancia</button>
+            <button onClick={() => setTopMetric("revenue")} style={pill(topMetric === "revenue")}>Por ventas</button>
+          </div>
+        </div>
+        <HBarChart rows={topRows} color={topMetric === "profit" ? REPORT_COLORS.profit : REPORT_COLORS.revenue}
+          empty={topMetric === "profit" ? "Aún no hay ganancia calculable: faltan ventas o costos cargados." : "Todavía no hay ventas confirmadas con este filtro."} />
+      </div>
+
+      <div style={card}>
+        <div style={{ ...h2, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+          <span>Detalle por producto ({sorted.length})</span>
+          <span style={{ fontWeight: 400, color: "#7a7974", fontSize: 11 }}>Toca un encabezado para ordenar</span>
+        </div>
+        <div className="m164-scrollbar" style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 900 }}>
+            <thead>
+              <tr>
+                {cols.map((c) => (
+                  <th key={c.key} onClick={() => clickSort(c.key)} style={{ textAlign: c.text ? "left" : "right", padding: "7px 8px", color: sortKey === c.key ? "#e2823c" : "#9a9994", fontWeight: 600, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", borderBottom: "1px solid #232326", position: "sticky", top: 0, background: "#151516" }}>
+                    {c.label}{sortKey === c.key ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.slice(0, limit).map((r) => (
+                <tr key={r.id} style={{ borderBottom: "1px solid #1d1d20" }}>
+                  <td style={{ padding: "7px 8px", maxWidth: 280 }}>
+                    <div style={{ color: "#e2823c", fontWeight: 700, fontSize: 11.5 }}>{r.code}{r.section !== "ruedas" && <span style={{ color: "#e2a06a", fontSize: 9.5, marginLeft: 6 }}>{r.section === "figuras" ? "FIGURA" : "DIORAMA"}</span>}</div>
+                    <div style={{ color: "#b5b3ad", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.name}>{r.name}{r.color && String(r.color).toUpperCase() !== "NA" ? ` · ${r.color}` : ""}</div>
+                  </td>
+                  {cols.slice(1).map((c) => {
+                    const v = r[c.key];
+                    const tone = c.tone ? (v < 0 ? REPORT_COLORS.loss : v > 0 ? REPORT_COLORS.profit : "#c9c8c3") : (c.key === "unitCost" && v === null ? "#e2b34b" : "#d6d4ce");
+                    return <td key={c.key} style={{ padding: "7px 8px", textAlign: "right", whiteSpace: "nowrap", color: tone }}>{c.fmt(v)}</td>;
+                  })}
+                </tr>
+              ))}
+              {sorted.length === 0 && <tr><td colSpan={cols.length} style={{ padding: "26px 8px", textAlign: "center", color: "#7a7974" }}>No hay productos con ventas ni stock para este filtro.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        {sorted.length > limit && (
+          <div style={{ textAlign: "center", marginTop: 12 }}>
+            <button onClick={() => setLimit((n) => n + 50)} style={{ ...pill(false), color: "#c9c8c3" }}>Mostrar más ({sorted.length - limit} restantes)</button>
+          </div>
+        )}
+      </div>
+
+      <details style={{ marginTop: 14, fontSize: 12, color: "#9a9994", lineHeight: 1.6 }}>
+        <summary style={{ cursor: "pointer" }}>¿Cómo se calcula?</summary>
+        <div style={{ paddingTop: 6 }}>
+          <b>Ventas</b>: pedidos en Pagado, Empacado o Enviado, con la fecha del pedido; el descuento de cada pedido se reparte entre sus productos.{" "}
+          <b>Ganancia</b>: ventas menos el costo por unidad (con envío) de cada producto vendido; los productos sin costo no entran.{" "}
+          <b>Stock</b>: unidades disponibles hoy en el catálogo (lo ya apartado por pedidos no está incluido), a precio de venta y a costo.{" "}
+          <b>Por cobrar</b>: pedidos Pendiente y Pago Parcial, menos lo abonado. Los costos son privados: solo los ves tú.
+        </div>
+      </details>
     </div>
   );
 }
@@ -2949,7 +3572,7 @@ function AdminAjustes({ settings, setSettings, clientes, setClientes, orders, se
 
 /* ---------------- Admin shell ---------------- */
 
-function AdminView({ setView, orders, setOrders, clientes, setClientes, products, setAddedProducts, overrides, setOverrides, settings, setSettings, logo, wishlists, setWishlists, onLogout, liveConnected, ordersError }) {
+function AdminView({ setView, orders, setOrders, clientes, setClientes, products, setAddedProducts, overrides, setOverrides, settings, setSettings, logo, wishlists, setWishlists, onLogout, liveConnected, ordersError, costs, saveCosts }) {
   const [tab, setTab] = useState("pedidos");
   const [slow, setSlow] = useState(false);
   useEffect(() => {
@@ -2964,7 +3587,7 @@ function AdminView({ setView, orders, setOrders, clientes, setClientes, products
       <div style={{ maxWidth: 1600, margin: "0 auto", padding: "16px" }}>
         <div style={{ display: "flex", gap: 6, marginBottom: 16, borderBottom: "1px solid #232326", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          {[["pedidos","Pedidos",ClipboardList,pendCount],["productos","Productos",Package,0],["wishlist","Wishlist",Heart,wishlists.length],["ajustes","Ajustes",Settings,0]].map(([id,label,Icon,badge]) => (
+          {[["pedidos","Pedidos",ClipboardList,pendCount],["productos","Productos",Package,0],["reporte","Reporte",BarChartIcon,0],["wishlist","Wishlist",Heart,wishlists.length],["ajustes","Ajustes",Settings,0]].map(([id,label,Icon,badge]) => (
             <button key={id} onClick={() => setTab(id)} style={{
               display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", background: "none", border: "none",
               borderBottom: tab === id ? "2px solid #e2823c" : "2px solid transparent",
@@ -2998,7 +3621,8 @@ function AdminView({ setView, orders, setOrders, clientes, setClientes, products
           </div>
         )}
         {tab === "pedidos" && <AdminPedidos orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes} overrides={overrides} setOverrides={setOverrides} products={products} />}
-        {tab === "productos" && <AdminProductos products={products} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides} />}
+        {tab === "productos" && <AdminProductos products={products} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides} costs={costs} saveCosts={saveCosts} />}
+        {tab === "reporte" && <AdminReporte orders={orders} products={products} costs={costs} saveCosts={saveCosts} />}
         {tab === "wishlist" && <AdminWishlist wishlists={wishlists} setWishlists={setWishlists} />}
         {tab === "ajustes" && <AdminAjustes settings={settings} setSettings={setSettings} clientes={clientes} setClientes={setClientes} orders={orders} setOrders={setOrders} />}
       </div>
@@ -3125,6 +3749,7 @@ function App() {
   const [cart, setCart] = useState({});
   const [toast, setToast] = useState(null);
   const [wishlists, setWishlists] = useState([]);
+  const [costs, setCosts] = useState({}); // costo por unidad (con envío) de cada producto: privado, solo admin
   const [liveConnected, setLiveConnected] = useState(false);
   const [ordersError, setOrdersError] = useState(null);
 
@@ -3250,19 +3875,28 @@ function App() {
 
   // Carga PRIVADA: lista de clientes y favoritos de todos los clientes. Solo con sesión de admin.
   useEffect(() => {
-    if (!isAdmin) { setClientes([]); setWishlists([]); return; }
+    if (!isAdmin) { setClientes([]); setWishlists([]); setCosts({}); return; }
     let cancelled = false;
     (async () => {
-      const [clientesDoc, wishlistsMap] = await Promise.all([
+      const [clientesDoc, wishlistsMap, costsDoc] = await Promise.all([
         fbFetchDoc("meta", "clientes", { list: [] }),
         fbFetchCollection("wishlists"),
+        fbFetchDoc("meta", "costs", { map: {} }),
       ]);
       if (cancelled) return;
       setClientes(clientesDoc.list || []);
       setWishlists(Object.values(wishlistsMap));
+      setCosts(costsDoc.map || {});
     })();
     return () => { cancelled = true; };
   }, [isAdmin]);
+
+  // Guarda costos por unidad ({ idProducto: costo }). Va a Firestore meta/costs (solo lo lee/escribe el admin).
+  const saveCosts = async (patch) => {
+    const ok = await fbMergeDoc("meta", "costs", { map: patch });
+    if (ok) setCosts((prev) => ({ ...prev, ...patch }));
+    return ok;
+  };
 
   // Limpieza: versiones antiguas guardaban un PIN en los ajustes públicos. Se elimina al entrar el admin.
   useEffect(() => {
@@ -3439,7 +4073,8 @@ function App() {
         <AdminView setView={setView} orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes}
           products={allProducts} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides}
           settings={settings} setSettings={setSettings} logo={settings.logo} wishlists={wishlists} setWishlists={setWishlists}
-          onLogout={() => { signOut(auth); setView("client"); }} liveConnected={liveConnected} ordersError={ordersError} />
+          onLogout={() => { signOut(auth); setView("client"); }} liveConnected={liveConnected} ordersError={ordersError}
+          costs={costs} saveCosts={saveCosts} />
       )}
       {showGate && (
         <AdminGate onCancel={() => setShowGate(false)} onSuccess={() => { setView("admin"); setShowGate(false); }} />
