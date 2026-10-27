@@ -2883,13 +2883,34 @@ function costOf(costs, id) {
   if (c === undefined || c === null || c === "" || isNaN(Number(c))) return null;
   return Number(c);
 }
-function periodRange(preset, now = Date.now()) {
-  const d = new Date(now);
-  if (preset === "mes") return [new Date(d.getFullYear(), d.getMonth(), 1).getTime(), Infinity];
-  if (preset === "anio") return [new Date(d.getFullYear(), 0, 1).getTime(), Infinity];
-  if (preset === "30") return [now - 30 * 86400000, Infinity];
-  if (preset === "7") return [now - 7 * 86400000, Infinity];
-  return null;
+// Fechas como "número de día" (sin horas), para que el selector no dependa de husos horarios ni de horario de verano.
+const DAY_MS = 86400000;
+function dayIdxOf(ts) { const d = new Date(ts); return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY_MS); }
+function dayIdxToDate(idx) { const d = new Date(idx * DAY_MS); return { y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate() }; }
+function dayStartTs(idx) { const x = dayIdxToDate(idx); return new Date(x.y, x.m, x.d, 0, 0, 0, 0).getTime(); }
+function dayEndTs(idx) { const x = dayIdxToDate(idx); return new Date(x.y, x.m, x.d, 23, 59, 59, 999).getTime(); }
+function dayToInput(idx) { const x = dayIdxToDate(idx); return `${x.y}-${String(x.m + 1).padStart(2, "0")}-${String(x.d).padStart(2, "0")}`; }
+function inputToDay(str) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str || "");
+  return m ? Math.floor(Date.UTC(+m[1], +m[2] - 1, +m[3]) / DAY_MS) : null;
+}
+function dayLabel(idx) { const x = dayIdxToDate(idx); return `${x.d} ${MONTHS_ES[x.m]} ${x.y}`; }
+// Rangos rápidos (inclusivos): devuelve [díaInicial, díaFinal] o null.
+function presetRange(preset, today) {
+  const t = dayIdxToDate(today);
+  const firstOfMonth = (y, m) => Math.floor(Date.UTC(y, m, 1) / DAY_MS);
+  switch (preset) {
+    case "hoy": return [today, today];
+    case "ayer": return [today - 1, today - 1];
+    case "7": return [today - 6, today];
+    case "30": return [today - 29, today];
+    case "90": return [today - 89, today];
+    case "mes": return [firstOfMonth(t.y, t.m), today];
+    case "mesant": return [firstOfMonth(t.y, t.m - 1), firstOfMonth(t.y, t.m) - 1];
+    case "anio": return [firstOfMonth(t.y, 0), today];
+    case "anioant": return [firstOfMonth(t.y - 1, 0), firstOfMonth(t.y, 0) - 1];
+    default: return null;
+  }
 }
 function bucketOf(ts, gran) {
   const d = new Date(ts);
@@ -3176,8 +3197,62 @@ function ProductPicker({ options, selected, onChange }) {
   );
 }
 
+// Barra de rango de fechas: dos controles que se arrastran (o se toca la franja y se mueve el más cercano). Avanza de a 1 día.
+function DateRangeSlider({ min, max, value, onChange }) {
+  const [lo, hi] = value;
+  const trackRef = useRef(null);
+  const dragRef = useRef(null);
+  const span = Math.max(1, max - min);
+  const pctOf = (v) => ((v - min) / span) * 100;
+  const dayFromX = (clientX) => {
+    if (!trackRef.current) return min;
+    const rect = trackRef.current.getBoundingClientRect();
+    const pct = Math.min(1, Math.max(0, (clientX - rect.left) / (rect.width || 1)));
+    return Math.round(min + pct * span);
+  };
+  const apply = (which, v) => {
+    if (which === "lo") onChange(Math.min(v, hi), hi);
+    else onChange(lo, Math.max(v, lo));
+  };
+  const onPointerDown = (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    const v = dayFromX(e.clientX);
+    let which;
+    if (lo === hi) which = v < lo ? "lo" : "hi";
+    else which = Math.abs(v - lo) <= Math.abs(v - hi) ? "lo" : "hi";
+    dragRef.current = which;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* sin captura también funciona */ }
+    apply(which, v);
+  };
+  const onPointerMove = (e) => { if (dragRef.current) apply(dragRef.current, dayFromX(e.clientX)); };
+  const endDrag = (e) => {
+    dragRef.current = null;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) { /* nada */ }
+  };
+  const thumb = (pct) => ({
+    position: "absolute", left: `${pct}%`, top: "50%", transform: "translate(-50%, -50%)", width: 24, height: 24,
+    borderRadius: "50%", background: "#e2823c", border: "3px solid #0c0c0d", boxShadow: "0 0 0 1px #e2823c, 0 2px 8px rgba(0,0,0,0.6)", pointerEvents: "none",
+  });
+  return (
+    <div role="group" aria-label="Rango de fechas">
+      <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
+        style={{ height: 48, padding: "0 14px", display: "flex", alignItems: "center", touchAction: "none", cursor: "pointer", userSelect: "none", WebkitUserSelect: "none" }}>
+        <div ref={trackRef} style={{ position: "relative", flex: 1, height: 24 }}>
+          <div style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 6, marginTop: -3, borderRadius: 999, background: "#2a2a2e" }} />
+          <div style={{ position: "absolute", left: `${pctOf(lo)}%`, right: `${100 - pctOf(hi)}%`, top: "50%", height: 6, marginTop: -3, borderRadius: 999, background: "#e2823c" }} />
+          <div style={thumb(pctOf(lo))} />
+          <div style={thumb(pctOf(hi))} />
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: "#7a7974", padding: "0 6px" }}>
+        <span>{dayLabel(min)}</span><span>{dayLabel(max)}</span>
+      </div>
+    </div>
+  );
+}
+
 function AdminReporte({ orders, products, costs, saveCosts }) {
-  const [period, setPeriod] = useState("todo");
+  const [dateSel, setDateSel] = useState({ preset: "todo", from: null, to: null }); // from/to = número de día
   const [section, setSection] = useState("todas");
   const [selected, setSelected] = useState([]);
   const [onlyNoCost, setOnlyNoCost] = useState(false);
@@ -3187,12 +3262,31 @@ function AdminReporte({ orders, products, costs, saveCosts }) {
   const [limit, setLimit] = useState(50);
   const costFileRef = useRef(null);
 
-  const hour = Math.floor(Date.now() / 3600000);
-  const range = useMemo(() => periodRange(period), [period, hour]);
+  // Límites de la barra de fechas: del primer pedido vendido hasta hoy (o el último pedido, si es posterior).
+  const todayIdx = dayIdxOf(Date.now());
+  const span = useMemo(() => {
+    const ts = (orders || []).filter((o) => o && SALE_STATUSES.includes(o.status) && o.createdAt).map((o) => o.createdAt);
+    if (ts.length === 0) return { min: todayIdx, max: todayIdx };
+    return { min: dayIdxOf(Math.min(...ts)), max: Math.max(dayIdxOf(Math.max(...ts)), todayIdx) };
+  }, [orders, todayIdx]);
+  const effFrom = dateSel.from === null ? span.min : dateSel.from;
+  const effTo = dateSel.to === null ? span.max : dateSel.to;
+  const period = useMemo(() => (dateSel.preset === "todo" ? null : [dayStartTs(effFrom), dayEndTs(effTo)]), [dateSel.preset, effFrom, effTo]);
   const report = useMemo(
-    () => buildReport({ orders, products, costs, section, productIds: selected, period: range, onlyNoCost }),
-    [orders, products, costs, section, selected, range, onlyNoCost]
+    () => buildReport({ orders, products, costs, section, productIds: selected, period, onlyNoCost }),
+    [orders, products, costs, section, selected, period, onlyNoCost]
   );
+  const pickPreset = (pr) => {
+    if (pr === "todo") setDateSel({ preset: "todo", from: null, to: null });
+    else if (pr === "rango") setDateSel({ preset: "rango", from: effFrom, to: effTo });
+    else { const r = presetRange(pr, todayIdx); setDateSel({ preset: pr, from: r[0], to: r[1] }); }
+    setLimit(50);
+  };
+  const setRangeDays = (a, b) => { setDateSel({ preset: "rango", from: a, to: b }); setLimit(50); };
+  const onFromInput = (e) => { const dd = inputToDay(e.target.value); if (dd !== null) setRangeDays(dd, Math.max(dd, effTo)); };
+  const onToInput = (e) => { const dd = inputToDay(e.target.value); if (dd !== null) setRangeDays(Math.min(dd, effFrom), dd); };
+  const sliderMin = Math.min(span.min, effFrom), sliderMax = Math.max(span.max, effTo);
+  const dayCount = effTo - effFrom + 1;
   const { kpi } = report;
 
   const options = useMemo(() => {
@@ -3306,20 +3400,47 @@ function AdminReporte({ orders, products, costs, saveCosts }) {
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
-        <select value={period} onChange={(e) => setPeriod(e.target.value)} aria-label="Período"
-          style={{ background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "8px 10px", color: "#c9c8c3", fontSize: 12.5 }}>
-          <option value="todo">Todo el tiempo</option>
-          <option value="mes">Este mes</option>
-          <option value="30">Últimos 30 días</option>
-          <option value="7">Últimos 7 días</option>
-          <option value="anio">Este año</option>
-        </select>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {[["todas", "Todas"], ...SECTIONS.map((x) => [x.id, x.label])].map(([id, label]) => (
             <button key={id} onClick={() => changeSection(id)} aria-pressed={section === id} style={pill(section === id)}>{label}</button>
           ))}
         </div>
         <ProductPicker options={optionsShown} selected={selected} onChange={(ids) => { setSelected(ids); setLimit(50); }} />
+      </div>
+      <div style={{ ...card, padding: "12px 14px 8px", marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 4 }}>
+          {(() => {
+            const lab = { display: "flex", flexDirection: "column", gap: 4, fontSize: 10.5, color: "#9a9994", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.03em" };
+            const inp = { background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "8px 10px", color: "#e4e2dc", fontSize: 12.5, colorScheme: "dark" };
+            return (
+              <>
+                <label style={lab}>Período
+                  <select value={dateSel.preset} onChange={(e) => pickPreset(e.target.value)} aria-label="Período" style={inp}>
+                    <option value="todo">Todo el tiempo</option>
+                    <option value="hoy">Hoy</option>
+                    <option value="ayer">Ayer</option>
+                    <option value="7">Últimos 7 días</option>
+                    <option value="30">Últimos 30 días</option>
+                    <option value="90">Últimos 90 días</option>
+                    <option value="mes">Este mes</option>
+                    <option value="mesant">Mes anterior</option>
+                    <option value="anio">Este año</option>
+                    <option value="anioant">Año anterior</option>
+                    <option value="rango">Rango personalizado</option>
+                  </select>
+                </label>
+                <label style={lab}>Desde<input type="date" value={dayToInput(effFrom)} onChange={onFromInput} aria-label="Fecha desde" style={inp} /></label>
+                <label style={lab}>Hasta<input type="date" value={dayToInput(effTo)} onChange={onToInput} aria-label="Fecha hasta" style={inp} /></label>
+              </>
+            );
+          })()}
+          <div style={{ fontSize: 12, color: "#c9c8c3", paddingBottom: 9, lineHeight: 1.35 }}>
+            {dateSel.preset === "todo"
+              ? "Todo el tiempo (sin filtro de fecha)"
+              : `${dayLabel(effFrom)} → ${dayLabel(effTo)} · ${dayCount} día${dayCount === 1 ? "" : "s"}`}
+          </div>
+        </div>
+        <DateRangeSlider min={sliderMin} max={sliderMax} value={[effFrom, effTo]} onChange={setRangeDays} />
       </div>
       {selected.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12, alignItems: "center" }}>
