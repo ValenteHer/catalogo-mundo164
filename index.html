@@ -395,8 +395,7 @@ const SECTIONS = [
 ];
 function sectionOf(p) {
   if (p.section) return p.section;
-  if (p.id === "admin-figura-diorama") return "dioramas";
-  if (p.adminOnly) return "figuras";
+  if (p.adminOnly) return "figuras"; // "Figura Custom" y "Figura Diorama" (venta manual) son figuras, no dioramas
   return "ruedas";
 }
 const Lock = Icon(<><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></>);
