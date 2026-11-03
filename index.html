@@ -1783,6 +1783,19 @@ function OrderCard({ o, overrides, clientes, onUpdate, onDelete, onDragStart, on
           </div>
         )}
       </div>
+      {Array.isArray(o.payments) && o.payments.length > 0 && (
+        <details style={{ marginBottom: 6, fontSize: 11, color: "#9a9994" }}>
+          <summary style={{ cursor: "pointer" }}>Historial de cobros ({o.payments.length})</summary>
+          <div style={{ paddingTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
+            {o.payments.map((e, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span>{e.base ? `${fmtDate(e.ts)} · antes de la actualización` : new Date(e.ts).toLocaleString("es-VE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                <span style={{ color: e.amount < 0 ? "#e2736b" : "#3fae6a", fontWeight: 700 }}>{e.amount < 0 ? "-" : "+"}{money(Math.abs(e.amount))}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
         <label style={{ fontSize: 11, color: "#9a9994" }}>Días para pagar</label>
@@ -1886,7 +1899,12 @@ function AdminPedidos({ orders, setOrders, clientes, setClientes, overrides, set
       await applyStockDeltas(_stockDeltas);
     }
     setOrders((prev) => {
-      const next = prev.map((o) => o.id === id ? { ...o, ...cleanPatch } : o);
+      const next = prev.map((o) => {
+        if (o.id !== id) return o;
+        const merged = { ...o, ...cleanPatch };
+        const payments = appendPaymentLog(o, merged, Date.now()); // si cambió lo cobrado (abono, pago, estado, descuento) lo anota con su fecha
+        return payments !== undefined ? { ...merged, payments } : merged;
+      });
       const updated = next.find((o) => o.id === id);
       if (updated) fbSaveDoc("orders", id, updated);
       return next;
@@ -2937,6 +2955,48 @@ function bucketLabel(ts, gran) {
   return `${d.getDate()} ${MONTHS_ES[d.getMonth()]}`;
 }
 
+// ---- Libro de cobros: cada pago o abono queda registrado con su fecha (pedido.payments = [{ ts, amount }]) ----
+function orderNet(o) {
+  const gross = (o.items || []).reduce((t, it) => t + (Number(it.price) || 0) * (Number(it.qty) || 0), 0);
+  return Math.max(0, gross - (Number(o.discount) || 0));
+}
+// Cuánto del pedido cuenta como cobrado hoy: pagado = todo; abierto = lo abonado (sin pasar del total).
+function recognizedAmount(o) {
+  const net = orderNet(o);
+  if (SALE_STATUSES.includes(o.status)) return net;
+  if (OPEN_STATUSES.includes(o.status)) return Math.min(net, Math.max(0, Number(o.advancePaid) || 0));
+  return 0;
+}
+// Devuelve el libro de cobros actualizado cuando un pedido cambia de `prev` a `next`, o undefined si no hay libro ni cambio.
+// Los pedidos anteriores a esta función se registran la primera vez que se tocan: lo ya cobrado queda con la fecha del pedido.
+function appendPaymentLog(prev, next, now = Date.now()) {
+  const before = recognizedAmount(prev), after = recognizedAmount(next);
+  const delta = Math.round((after - before) * 100) / 100;
+  const hasLog = Array.isArray(prev.payments);
+  if (Math.abs(delta) < 0.005) return hasLog ? prev.payments : undefined;
+  const log = hasLog ? prev.payments.map((e) => ({ ...e })) : (before > 0.004 ? [{ ts: Number(prev.createdAt) || now, amount: Math.round(before * 100) / 100, base: true }] : []);
+  const last = log[log.length - 1];
+  if (last && !last.base && now - last.ts < 120000) { // cambios seguidos (ej. al teclear un monto) se juntan en una línea
+    last.amount = Math.round((last.amount + delta) * 100) / 100;
+    if (Math.abs(last.amount) < 0.005) log.pop();
+  } else {
+    log.push({ ts: now, amount: delta });
+  }
+  return log;
+}
+// Cobros de un pedido para el reporte: el libro, o (si el pedido no tiene libro) lo cobrado hoy con la fecha del pedido.
+// Si el libro no coincide con lo cobrado hoy, la diferencia se corrige en la fecha del último movimiento.
+function orderPaymentEvents(o) {
+  const target = Math.round(recognizedAmount(o) * 100) / 100;
+  const created = Number(o.createdAt) || 0;
+  let ev = Array.isArray(o.payments) && o.payments.length > 0
+    ? o.payments.map((e) => ({ ts: Number(e.ts) || created, amount: Number(e.amount) || 0 }))
+    : (target > 0 ? [{ ts: created, amount: target }] : []);
+  const diff = Math.round((target - ev.reduce((t, e) => t + e.amount, 0)) * 100) / 100;
+  if (Math.abs(diff) >= 0.01) ev = [...ev, { ts: ev.length ? Math.max(...ev.map((e) => e.ts)) : created, amount: diff }];
+  return ev;
+}
+
 // Calcula todo el reporte. Función pura (sin React) para poder probarla.
 //  - Venta = pedido Pagado/Empacado/Enviado; ingreso = precio × cantidad, con el descuento del pedido repartido proporcionalmente.
 //  - Ganancia = ingreso − costo, solo de los productos que tienen costo cargado (los demás se muestran aparte como "sin costo").
@@ -2970,26 +3030,27 @@ function buildReport({ orders, products, costs, costDefaults = {}, section = "to
   };
 
   let openCommitted = 0, openReceivable = 0, abonosRevenue = 0;
-  const partialOrderIds = new Set();
+  const partialOrderIds = new Set(), orderIds = new Set();
   const events = [];
   (orders || []).forEach((o) => {
     if (!o || !Array.isArray(o.items)) return;
     const gross = o.items.reduce((t, it) => t + (Number(it.price) || 0) * (Number(it.qty) || 0), 0);
     const net = Math.max(0, gross - (Number(o.discount) || 0));
     const factor = gross > 0 ? net / gross : 0;
-    const isSale = SALE_STATUSES.includes(o.status);
     const isOpen = OPEN_STATUSES.includes(o.status);
-    // Parte del pedido que ya cuenta como venta: pagado = 100%; con abono = lo abonado ÷ total del pedido (neto de descuento).
+    // Cada cobro (pago o abono) cuenta en SU fecha: su parte = monto cobrado ÷ total del pedido (con descuento).
     // Ventas, costo, ganancia y unidades se reconocen en esa misma proporción.
-    const f = isSale ? 1 : isOpen ? (net > 0 ? Math.min(1, Math.max(0, Number(o.advancePaid) || 0) / net) : 0) : 0;
-    if (f > 0 && !(period && (o.createdAt < period[0] || o.createdAt > period[1]))) {
+    orderPaymentEvents(o).forEach((pe) => {
+      if (period && (pe.ts < period[0] || pe.ts > period[1])) return;
+      const share = net > 0 ? pe.amount / net : 0;
+      if (share === 0) return;
       let rev = 0, prof = 0, any = false;
       o.items.forEach((it) => {
         if (!itemOk(it.id)) return;
         any = true;
         const fullQty = Number(it.qty) || 0;
-        const qty = fullQty * f;
-        const r = (Number(it.price) || 0) * fullQty * factor * f;
+        const qty = fullQty * share;
+        const r = (Number(it.price) || 0) * fullQty * factor * share;
         const row = getRow(it.id, it);
         row.soldQty += qty; row.revenue += r; rev += r;
         if (isOpen) abonosRevenue += r;
@@ -2997,8 +3058,8 @@ function buildReport({ orders, products, costs, costDefaults = {}, section = "to
         if (c !== null) { row.costedRevenue += r; row.cogs += c * qty; prof += r - c * qty; }
         else row.noCostRevenue += r;
       });
-      if (any) { events.push({ ts: o.createdAt, revenue: rev, profit: prof }); if (isOpen) partialOrderIds.add(o.id); }
-    }
+      if (any) { events.push({ ts: pe.ts, revenue: rev, profit: prof }); orderIds.add(o.id); if (isOpen) partialOrderIds.add(o.id); }
+    });
     if (isOpen) { // lo que falta por cobrar de los pedidos abiertos (no depende del período)
       const left = net > 0 ? Math.max(0, net - (Number(o.advancePaid) || 0)) / net : 0;
       o.items.forEach((it) => {
@@ -3029,7 +3090,7 @@ function buildReport({ orders, products, costs, costDefaults = {}, section = "to
   const costedRevenue = sum((r) => r.costedRevenue);
   const cogs = sum((r) => r.cogs);
   const kpi = {
-    orderCount: events.length, revenue: sum((r) => r.revenue), cogs, profit: costedRevenue - cogs,
+    orderCount: orderIds.size, revenue: sum((r) => r.revenue), cogs, profit: costedRevenue - cogs,
     margin: costedRevenue > 0 ? (costedRevenue - cogs) / costedRevenue : null,
     soldQty: sum((r) => r.soldQty), revenueNoCost: sum((r) => r.noCostRevenue),
     stockQty: sum((r) => r.stockQty), stockSale: sum((r) => r.stockSale), stockCost: sum((r) => r.stockCost),
@@ -3278,10 +3339,11 @@ function AdminReporte({ orders, products, costs, saveCosts, costDefaults = {}, s
   const [limit, setLimit] = useState(50);
   const costFileRef = useRef(null);
 
-  // Límites de la barra de fechas: del primer pedido vendido hasta hoy (o el último pedido, si es posterior).
+  // Límites de la barra de fechas: del primer cobro registrado hasta hoy (o el último cobro, si es posterior).
   const todayIdx = dayIdxOf(Date.now());
   const span = useMemo(() => {
-    const ts = (orders || []).filter((o) => o && SALE_STATUSES.includes(o.status) && o.createdAt).map((o) => o.createdAt);
+    const ts = [];
+    (orders || []).forEach((o) => { if (o && Array.isArray(o.items)) orderPaymentEvents(o).forEach((e) => { if (e.ts) ts.push(e.ts); }); });
     if (ts.length === 0) return { min: todayIdx, max: todayIdx };
     return { min: dayIdxOf(Math.min(...ts)), max: Math.max(dayIdxOf(Math.max(...ts)), todayIdx) };
   }, [orders, todayIdx]);
@@ -3472,6 +3534,7 @@ function AdminReporte({ orders, products, costs, saveCosts, costDefaults = {}, s
           </div>
         </div>
         <DateRangeSlider min={sliderMin} max={sliderMax} value={[effFrom, effTo]} onChange={setRangeDays} />
+        <div style={{ fontSize: 10.5, color: "#7a7974", padding: "2px 6px 4px" }}>Las ventas se cuentan por la fecha de cobro: cada pago o abono entra en el día en que lo registraste.</div>
       </div>
       {selected.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12, alignItems: "center" }}>
@@ -3496,7 +3559,7 @@ function AdminReporte({ orders, products, costs, saveCosts, costDefaults = {}, s
         </div>
       )}
 
-      <div style={{ fontSize: 11, color: "#9a9994", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>Ventas · pedidos pagados + lo abonado en pedidos con pago parcial</div>
+      <div style={{ fontSize: 11, color: "#9a9994", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>Ventas cobradas · pagos y abonos registrados en el rango de fechas</div>
       <div style={{ ...grid(170), marginBottom: 16 }}>
         <KpiCard label="Ventas" value={money(kpi.revenue)} sub={`${fmtNum(kpi.soldQty)} unidades · ${fmtNum(kpi.orderCount)} pedido${kpi.orderCount === 1 ? "" : "s"}`} color={REPORT_COLORS.revenue} />
         <KpiCard label="Costo de lo vendido" value={money(kpi.cogs)} sub="Solo productos con costo cargado" color={REPORT_COLORS.cost} />
@@ -3578,7 +3641,7 @@ function AdminReporte({ orders, products, costs, saveCosts, costDefaults = {}, s
       <details style={{ marginTop: 14, fontSize: 12, color: "#9a9994", lineHeight: 1.6 }}>
         <summary style={{ cursor: "pointer" }}>¿Cómo se calcula?</summary>
         <div style={{ paddingTop: 6 }}>
-          <b>Ventas</b>: pedidos en Pagado, Empacado o Enviado (completos), más la parte abonada de los pedidos con pago parcial. Esa parte es lo abonado ÷ el total del pedido (con descuento): por ejemplo, si el pedido es de $18 y el cliente abonó $9, cuenta el 50% de las ventas, del costo y de la ganancia. Se usa la fecha del pedido, y el descuento se reparte entre sus productos. Las unidades de esos pedidos también se cuentan en proporción.{" "}
+          <b>Ventas</b>: lo cobrado. Cada pago o abono cuenta en la <b>fecha en que lo registraste</b> en el pedido (Abonado, Confirmar pago o cambio de estado a Pagado). Su parte es lo cobrado ÷ el total del pedido (con descuento): por ejemplo, si el pedido es de $18 y el cliente abonó $9, ese día cuenta el 50% de las ventas, del costo y de la ganancia, y el otro 50% el día que cobres el resto. Los cobros hechos antes de esta actualización se cuentan en la fecha del pedido. El descuento se reparte entre los productos y las unidades también se cuentan en proporción.{" "}
           <b>Ganancia</b>: ventas menos el costo por unidad (con envío) de cada producto vendido. Si un producto no tiene costo propio se usa el costo promedio de su categoría (si lo cargaste); si tampoco hay, no entra.{" "}
           <b>Stock</b>: unidades disponibles hoy en el catálogo (lo ya apartado por pedidos no está incluido), a precio de venta y a costo.{" "}
           <b>Por cobrar</b>: pedidos Pendiente y Pago Parcial, menos lo abonado. Los costos son privados: solo los ves tú.
