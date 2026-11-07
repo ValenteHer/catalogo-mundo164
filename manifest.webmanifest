@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "Mundo 1/64 — Ruedas y miniaturas",
+  "short_name": "Mundo 1/64",
+  "description": "Catálogo para generar pedidos de ruedas, figuras y dioramas escala 1/64.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0c0c0d",
+  "theme_color": "#0c0c0d",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

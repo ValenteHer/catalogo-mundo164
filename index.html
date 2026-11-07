@@ -4,6 +4,21 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Mundo 1/64 — Catálogo</title>
+<meta name="theme-color" content="#0c0c0d" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Mundo 1/64" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black" />
+<script>
+  // Guarda el aviso de instalación del navegador (Chrome/Edge) para usarlo con el botón "Instalar app",
+  // y registra el service worker mínimo que permite instalar el catálogo como app.
+  window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); window.__m164Install = e; window.dispatchEvent(new Event("m164-install-ready")); });
+  window.addEventListener("appinstalled", function () { window.__m164Install = null; window.dispatchEvent(new Event("m164-installed")); });
+  if ("serviceWorker" in navigator) window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
+</script>
 <style>
   html, body { margin: 0; padding: 0; background: #0c0c0d; min-height: 100vh; }
   #root { min-height: 100vh; }
@@ -1095,6 +1110,117 @@ function MyOrdersDrawer({ open, onClose, orders, overrides, onHideOrder }) {
   );
 }
 
+/* ---------------- Instalar como app (acceso directo a la web) ---------------- */
+
+function isStandaloneApp() {
+  try { return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true; } catch (e) { return false; }
+}
+function detectPlatform(ua = (typeof navigator !== "undefined" && navigator.userAgent) || "", platform = (typeof navigator !== "undefined" && navigator.platform) || "", touchPoints = (typeof navigator !== "undefined" && navigator.maxTouchPoints) || 0) {
+  const ios = /iPad|iPhone|iPod/.test(ua) || (platform === "MacIntel" && touchPoints > 1);
+  const android = /Android/i.test(ua);
+  return {
+    ios, android,
+    mobile: ios || android || /Mobi/i.test(ua),
+    inApp: /FBAN|FBAV|Instagram|WhatsApp|MicroMessenger|Snapchat|TikTok|; wv\)/i.test(ua),
+    firefox: /Firefox|FxiOS/i.test(ua),
+    edge: /Edg\/|EdgA\/|EdgiOS\//.test(ua),
+    safari: /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS|Android/i.test(ua),
+  };
+}
+function useInstallApp() {
+  const [evt, setEvt] = useState(() => (typeof window !== "undefined" && window.__m164Install) || null);
+  const [installed, setInstalled] = useState(() => isStandaloneApp());
+  useEffect(() => {
+    const onReady = () => setEvt(window.__m164Install || null);
+    const onDone = () => { setInstalled(true); setEvt(null); };
+    window.addEventListener("m164-install-ready", onReady);
+    window.addEventListener("m164-installed", onDone);
+    return () => { window.removeEventListener("m164-install-ready", onReady); window.removeEventListener("m164-installed", onDone); };
+  }, []);
+  // "accepted" | "dismissed" | "manual" (el navegador no ofrece instalación directa: se muestran los pasos)
+  const install = async () => {
+    if (!evt) return "manual";
+    try {
+      evt.prompt();
+      const r = await evt.userChoice;
+      window.__m164Install = null; setEvt(null);
+      return r && r.outcome === "accepted" ? "accepted" : "dismissed";
+    } catch (e) { return "manual"; }
+  };
+  return { canPrompt: !!evt, installed, install };
+}
+
+function InstallHelpModal({ onClose }) {
+  const pf = detectPlatform();
+  const [copied, setCopied] = useState(false);
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(window.location.href.split("#")[0]); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch (e) { window.prompt("Copia este enlace:", window.location.href); }
+  };
+  let title = "Instalar el catálogo como app";
+  let steps;
+  if (pf.inApp) {
+    title = "Ábrelo en tu navegador";
+    steps = ["Ahora estás viendo el catálogo dentro de otra app (Instagram, Facebook, WhatsApp...), que no permite instalarlo.", "Toca el menú (⋮ o •••) y elige “Abrir en el navegador” (Chrome o Safari). También puedes copiar el enlace y pegarlo en tu navegador.", "Ya en el navegador, vuelve a tocar “Instalar app”."];
+  } else if (pf.ios && !pf.safari) {
+    title = "En iPhone se instala desde Safari";
+    steps = ["Abre este mismo enlace en Safari (puedes copiarlo con el botón de abajo).", "Toca el botón Compartir (el cuadro con una flecha hacia arriba).", "Elige “Añadir a pantalla de inicio” y confirma con “Añadir”."];
+  } else if (pf.ios) {
+    steps = ["Toca el botón Compartir (el cuadro con una flecha hacia arriba) en la barra de Safari.", "Desliza y elige “Añadir a pantalla de inicio”.", "Confirma con “Añadir”. Aparecerá como una app más en tu pantalla."];
+  } else if (pf.android) {
+    steps = ["Toca el menú del navegador (⋮).", "Elige “Instalar app” o “Añadir a la pantalla de inicio”.", "Confirma. El catálogo quedará como un icono en tu teléfono."];
+  } else if (pf.firefox) {
+    title = "Firefox no permite instalar apps web";
+    steps = ["Firefox de escritorio no instala páginas como apps.", "Abre este enlace en Chrome o Edge y vuelve a tocar “Instalar app”."];
+  } else if (pf.safari) {
+    steps = ["En el menú Archivo de Safari elige “Añadir al Dock…”.", "Confirma el nombre. El catálogo quedará en tu Dock como una app."];
+  } else if (pf.edge) {
+    steps = ["Abre el menú de Edge (•••) → Aplicaciones → “Instalar este sitio como una aplicación”.", "Confirma. Se creará un acceso en tu escritorio y en el menú de inicio."];
+  } else {
+    steps = ["Busca el icono de instalar en la barra de direcciones (a la derecha), o abre el menú (⋮) → “Guardar y compartir” → “Instalar Mundo 1/64”.", "Confirma. Se creará un acceso directo en tu escritorio."];
+  }
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 90, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Cómo instalar la app"
+        style={{ background: "#141415", border: "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(420px, 100%)", maxHeight: "85vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div className="disp" style={{ fontSize: 15, fontWeight: 700 }}>{title}</div>
+          <button onClick={onClose} aria-label="Cerrar" style={{ background: "none", border: "none", color: "#9a9994" }}><X size={18} /></button>
+        </div>
+        <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 8, fontSize: 13, color: "#d6d4ce", lineHeight: 1.5 }}>
+          {steps.map((t, i) => <li key={i}>{t}</li>)}
+        </ol>
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <button onClick={copyLink} style={{ flex: 1, background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 600 }}>{copied ? "¡Enlace copiado!" : "Copiar enlace"}</button>
+          <button onClick={onClose} style={{ flex: 1, background: "#e2823c", border: "none", color: "#0c0c0d", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700 }}>Entendido</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Botón del inicio: instala el catálogo como app (acceso directo a la web). Se oculta si ya está instalada.
+function InstallAppButton() {
+  const { canPrompt, installed, install } = useInstallApp();
+  const [help, setHelp] = useState(false);
+  if (installed) return null;
+  const onClick = async () => {
+    if (!canPrompt) { setHelp(true); return; }
+    const r = await install();
+    if (r === "manual") setHelp(true);
+  };
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <button onClick={onClick} title="Instalar el catálogo como app en tu dispositivo"
+          style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 12px", borderRadius: 999, fontSize: 12.5, fontWeight: 600, background: "#17171a", border: "1px solid #2a2a2e", color: "#e2823c" }}>
+          <Download size={14} /> Instalar app
+        </button>
+      </div>
+      {help && <InstallHelpModal onClose={() => setHelp(false)} />}
+    </>
+  );
+}
+
 /* ---------------- Client Catalog View ---------------- */
 
 // Barra de rango de precio. Toda la franja (52 px de alto) es zona táctil: tocas o arrastras en cualquier punto
@@ -1433,6 +1559,7 @@ function ClientCatalog({ products, overrides, cart, setCart, whatsappNumbers, on
     <>
       <Header view="client" cartCount={cartCount} onOpenCart={() => setCartOpen(true)} isAdmin={false} setView={() => {}} logo={logo} wishlistCount={wishlist.length} onOpenWishlist={() => setWishlistOpen(true)} onOpenMyOrders={() => setMyOrdersOpen(true)} />
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px" }}>
+        <InstallAppButton />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 14 }}>
           {SECTIONS.map((sec) => {
             const Ic = sec.icon;
@@ -2465,13 +2592,14 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides, c
     color: { label: "Color", sortable: true },
     complete: { label: "Complete Name", sortable: true },
     price: { label: "Price", sortable: true },
+    cost: { label: "Costo", sortable: true },
     qty: { label: "Stock disponible", sortable: true },
     photos: { label: "Fotos", sortable: false },
     visible: { label: "Mostrar", sortable: false },
     actions: { label: "Acciones", sortable: false },
   };
   // Modo lista: solo las columnas esenciales. Código, medida, nombre, logo y color se editan con el botón de lápiz (Acciones).
-  const DEFAULT_COL_ORDER = ["photo","photos","visible","complete","price","qty","actions"];
+  const DEFAULT_COL_ORDER = ["photo","photos","visible","complete","price","cost","qty","actions"];
   const [columnOrder, setColumnOrder] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("m164_admin_colorder_v2"));
@@ -2516,7 +2644,12 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides, c
     if (sortKey) {
       list = [...list].sort((a, b) => {
         let va, vb;
-        if (sortKey === "price" || sortKey === "qty") {
+        if (sortKey === "cost") { // los productos sin costo quedan siempre al final
+          va = costWithDefault(costs, costDefaults, a.id, sectionOf(a)).cost; vb = costWithDefault(costs, costDefaults, b.id, sectionOf(b)).cost;
+          if (va === null && vb === null) return 0;
+          if (va === null) return 1;
+          if (vb === null) return -1;
+        } else if (sortKey === "price" || sortKey === "qty") {
           va = sortKey === "price" ? numOr(overrides[a.id]?.price, a.price) : numOr(overrides[a.id]?.qty, a.qty);
           vb = sortKey === "price" ? numOr(overrides[b.id]?.price, b.price) : numOr(overrides[b.id]?.qty, b.qty);
         } else if (sortKey === "complete") {
@@ -2531,7 +2664,7 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides, c
       });
     }
     return list;
-  }, [products, query, sortKey, sortDir, overrides, viewMode, sectionFilter]);
+  }, [products, query, sortKey, sortDir, overrides, viewMode, sectionFilter, costs, costDefaults]);
   useEffect(() => { setGridLimit(60); }, [query, sectionFilter, viewMode, sortKey, sortDir, layout]);
 
   // Código automático para figuras/dioramas cuando se deja vacío (FIG-001, DIO-001...).
@@ -2612,6 +2745,21 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides, c
                         onChange={(e) => updateOverride(p.id, { price: e.target.value })}
                         style={{ width: 64, background: "#1f1f22", border: "1px solid #2a2a2e", borderRadius: 6, padding: "4px 6px", color: "#f3f1ec", fontSize: 12 }} />
                     );
+                  case "cost": {
+                    // Costo por unidad con envío (el propio o el promedio de la categoría), con el margen que deja el precio actual.
+                    const cw = costWithDefault(costs, costDefaults, p.id, sectionOf(p));
+                    if (cw.cost === null) return <span title="Sin costo cargado: agrégalo con el lápiz (editar)" style={{ color: "#e2b34b", fontSize: 12 }}>sin costo</span>;
+                    const pr = Number(p.price) || 0;
+                    const mg = pr > 0 ? (pr - cw.cost) / pr : null;
+                    return (
+                      <div style={{ lineHeight: 1.25 }}>
+                        <div style={{ fontSize: 12.5, color: "#e4e2dc", fontWeight: 600 }}>
+                          {money(cw.cost)}{cw.isDefault && <span title="Costo promedio de la categoría" style={{ color: "#7a7974", fontSize: 10, fontWeight: 400 }}> (cat.)</span>}
+                        </div>
+                        {mg !== null && <div title="Margen = (precio − costo) ÷ precio" style={{ fontSize: 10.5, color: mg < 0 ? "#e2736b" : "#7a7974" }}>margen {Math.round(mg * 100)}%</div>}
+                      </div>
+                    );
+                  }
                   case "qty":
                     return (
                       <input type="number" value={ov.qty !== undefined ? ov.qty : p.qty} title="Corrige aquí el stock disponible"
@@ -2712,13 +2860,15 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides, c
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {layout === "cuadricula" && (
-            <select value={sortKey && ["complete", "price", "qty"].includes(sortKey) ? `${sortKey}|${sortDir}` : ""}
+            <select value={sortKey && ["complete", "price", "qty", "cost"].includes(sortKey) ? `${sortKey}|${sortDir}` : ""}
               onChange={(e) => { const v = e.target.value; if (!v) { setSortKey(null); setSortDir("asc"); } else { const [k, d] = v.split("|"); setSortKey(k); setSortDir(d); } }}
               style={{ background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "7px 8px", color: "#c9c8c3", fontSize: 12.5 }}>
               <option value="">Orden original</option>
               <option value="complete|asc">Nombre A–Z</option>
               <option value="price|asc">Precio ↑</option>
               <option value="price|desc">Precio ↓</option>
+              <option value="cost|asc">Costo ↑</option>
+              <option value="cost|desc">Costo ↓</option>
               <option value="qty|asc">Stock ↑</option>
               <option value="qty|desc">Stock ↓</option>
             </select>
@@ -2736,7 +2886,7 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides, c
       <div style={{ fontSize: 11.5, color: "#7a7974", marginBottom: 10 }}>Mostrando {visible.length} de {products.length} productos. Precio y stock disponible se guardan al escribir — úsalo para corregir el inventario manualmente cuando agregues fotos o edites datos.</div>
       {layout === "lista" ? (
       <div className="m164-scrollbar" style={{ overflowX: "auto", border: "1px solid #232326", borderRadius: 10, maxHeight: "70vh", overflowY: "auto" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 720 }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 800 }}>
           <thead>
             <tr>
               {columnOrder.map((colId) => {
@@ -2803,6 +2953,7 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides, c
                       <label style={{ fontSize: 10.5, color: "#9a9994", display: "flex", flexDirection: "column", gap: 3 }}>Precio{cellFor(p, "price")}</label>
                       <label style={{ fontSize: 10.5, color: "#9a9994", display: "flex", flexDirection: "column", gap: 3 }}>Stock{cellFor(p, "qty")}</label>
                     </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "#9a9994" }}>Costo {cellFor(p, "cost")}</div>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
                       {cellFor(p, "photos")}
                       <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "#9a9994" }}>Mostrar {cellFor(p, "visible")}</span>
