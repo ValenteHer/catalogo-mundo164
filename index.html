@@ -182,6 +182,15 @@ async function fbMergeDoc(colName, id, data) {
   catch (e) { console.error("merge doc error", colName, id, e); return false; }
 }
 
+function downloadJSON(filename, obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 1)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function numOr(val, fallback) {
   if (val === undefined || val === null || val === "") return fallback;
   const n = Number(val);
@@ -2566,11 +2575,158 @@ function NewProductModal({ onClose, onSave, initial, title, defaultSection = "ru
   );
 }
 
-function AdminProductos({ products, setAddedProducts, overrides, setOverrides, costs = {}, saveCosts = async () => false, costDefaults = {} }) {
+// Ajuste de precios listo para aplicar con un clic desde Productos (sin subir archivo). Solo trae ids y la regla; los costos se leen de los que tienes cargados.
+// Quedan fuera (se editan a mano): Buffer, EJES, MonoRace, MonoTruck, Bearing, Bearing-2, M136, M118 y M119.
+const BUILTIN_PRICE_PLAN = { id: "ajuste-x2.5-r0.05-2026-11", label: "Costo × 2.5, redondeado a $0.05", multiplier: 2.5, rounding: { step: 0.05, mode: "nearest" }, ids: ["p_b76382568dc6","p_0fd1bcae25ab","p_5281c96cc948","p_10ed921317b6","p_ee809c533b6f","p_1832ca63a9bc","p_d5eb1c48506d","p_afd34838f821","p_3e548e56cc89","p_d8703ff558c6","p_df770d08cebc","p_a6350654d6f9","p_1322c5ae32a2","p_ecde507f4e84","p_49debc0c0195","p_80017bf8d076","p_5ad2ffc171d0","p_26183c6237d0","p_61686659d41d","p_e5fb26865016","p_dd0f1458b237","p_598f5e550680","p_70195c01f611","p_142b2c3701c4","p_8f72f35bd119","p_d48d894daef5","p_d543a1e997df","p_69429d7844dc","p_d733e0bb638b","p_d543a1e997df_2","p_7ad2457456ac","p_f464e2e95ae2","p_3f4e88d6e05b","p_f464e2e95ae2_2","p_28c95a6f9d9b","p_fbf2dd9cdc80","p_4d27e4ac180c","p_3ecf7c8ce5d0","p_9962bea270ee","p_25cb53fa8985","p_713946eeba0e","p_41260269c4fb","p_2331548e49f6","p_cfc1fa9656e6","p_cfbdea4fc08e","p_25a9d0e8de8b","p_a8d14bafd1be","p_98415a6b7691","p_111751886f1d","p_eb7d6411dd23","p_2844aec0d2fa","p_f98d0effaed9","p_f0785ed2d832","p_7530c27fe33d","p_f0d767784f75","p_381d1970535a","p_8f3b38cdfa49","p_3bad2e42e06c","p_3a15f099b51f","p_f49a1b5dbeab","p_19cc34ed1119","p_6eea9abc1a27","p_4f5df6a032d8","p_49af8e3e593d","p_2f158bbe4a37","p_3cfa8ffb060d","p_e2eb57d2cbd1","p_49de49180766","p_8e2808266beb","p_545396125845","p_a9f7ecb19d04","p_8b8e60aba128","p_7da7b5890b6f","p_c77ed127bb18","p_57b80ec277e3","p_d6968daa717c","p_fcf67f690b21","p_2a5ae8557fdc","p_c3c37b913147","p_d5201395f336","p_8028efaa480d","p_7b8f258b3737","p_b0706c40c4fe","p_9a8c1db4c64a","p_290816e231b2","p_c905768210d0","p_4ee725862f3f","p_fd0381be6851","p_c343a5df0631","p_92d565d5ac06","p_4ca8c5244f44","p_c41c1e04bcf4","p_a4f1177ea1e1","p_bca19a9713de","p_934d40bd6ffd","p_930f7cefd781","p_3b9f11980625","p_85d8d5c2b0a7","p_7b6d951dad76","p_9a3c95aca1ed","p_4f31b9104f62","p_0e2263f0eb2b","p_8c69814bad57","p_103ddd9e160f","p_5200fb233e2b","p_c7363cfa1cdb","p_ba2509f567b5","p_4a92811b91e3","p_e24cf23859e5","p_66804d78b658","p_ea5828bef51c","p_3f6635380e6d","p_5a2f05a88020","p_cab87ea30a18","p_48b950c09689","p_2301bdc02e47","p_1b5fb76a0095","p_a266864baf96","p_8f2042d7f0e0","p_82ec4f1331af","p_d1a70e9e30cc","p_28780984eced","p_2b75bfe53bee","p_69579994f7e7","p_e2523a0b567a","p_c55a91f68f15","p_02afd6a13658","p_5b9a94719f50","p_b1e9ee398e77","p_96d1f04caf5e","p_fad6a36b636e","p_5e0938b17576","p_cb69ed05364a","p_9f07d97fcbc8","p_13bcd0d65f87","p_396b6b8462ad","p_4842b72a9597","p_6c78729cc257","p_25f73df92651","p_a291d77b7140","p_748fb98e2583","p_97f751272b7e","p_b8b9b968e167","p_cb3faaac242d","p_24122480ec0f","p_1cbcbb61a098","p_d6cc0a2999e9","p_1b0eb3a54817","p_d08c87b5ea62","p_bc4ba7dc0dfa","p_3de285033bc2","p_c74352956cc8","p_44cd9f2d5265","p_e90ddfa39cdc","p_a0fc28626314","p_6eaffc19096b","p_580f0f36e2f6","p_fc11a1c897c8","p_90b80ba4957e","p_0d9eb8da25b8","p_09eb04450f4c","p_13ea52001d0c","p_ee2340827bb9","p_b11ccb1ef2cc","p_06d5ef46929c","p_d3d41dcb64f7","p_c62599309280","p_293479259674","p_bc4d2a12107d","p_298ddb40e5b1","p_a0148e17c2bd","p_de6f23773a09","p_12d59c971cd5","p_e0463cb50a84","p_f5551b750ac3","p_a0eef20a0672","p_c1382b86a9f5","p_b82a2f4c29f3","p_80a65b92b400","p_5a5eabdd47a6","p_c121b102c809","p_4151e596575d","p_d5ba33ff9247","p_7bd52cc6bc66","p_95307f80c977","p_59400d309538","p_b31157c20f80","p_4eaecdc139f2","p_e681593620b2","p_7207dc6376da","p_488c38e190bc","p_e2a767c79c91","p_7451b1624ce0","p_48c978748c2e","p_7181c8b3c6b2","p_a8b203bd9dbf","p_abf33f02c548","p_a7ef215a57bf","p_124fa397dfbe","p_f8ffecc24090","p_db8948655bcc","p_df93bc18c046","p_797e8e6d28b6","p_dbe7e93c8376","p_db0bc208f330","p_8b473cda21b4","p_f149afb54abb","p_c4ba118ec6cd","p_ccfb1cf1ca66","p_742b182a9907","p_3dcdd39f3b7f","p_f83af3295f69","p_c342ba9b4348","p_c16085c21686","p_7188e77e7969","p_d003120743e8","p_24a02c812cbe","p_8edae7338286","p_13d547d001fd","p_3d5f64208820","p_2f39eb80bd6f","p_ee97c88363de","p_f74750282256","p_7ceab86a053b","p_766012a4a24a","p_8106715aac12","p_00cf6805c35b","p_8757f5804adb","p_7aca01bec8c2","p_584416ab7ce1","p_38aaabe5ede6","p_6b88cf99a4ae","p_888f059b2c77","p_019fa1db6cb8","p_af308d3af296","p_16d9c5db6a95","p_b10a6c6ac4e9","p_897f066cbac2","p_1146557e2a69","p_054863933141","p_109f7f6ee700","p_1680c26e0508","p_f15e617088ca","p_07d714672e66","p_e476b32aa6fe","p_915c1862ba7f","p_9c3ed9d7e04d","p_da9ad11d5f49","p_2c86bfc913d0","p_138ebf120af0","p_cd9fb4ee549b","p_116865f56589","p_b4d211259d61","p_7b4ad19ca2f0","p_0d70a14babb7","p_182eca6d9990","p_fb6a517d1a78","p_10e933b8abc2","p_3100a7c51d2a","p_b06b71d87edd","p_a8e2986fb0b2","p_d0440e545068","p_15a71b04a2c5","p_e355d069e8af","p_217043527292","p_bd33fca34fd2","p_f3e28fbbaf5c","p_cba6a9e6dda3","p_c5d686c08b37","p_54f68de323d9","p_b57eea84422a","p_968e5ed97c3d","p_014a0f0b2d6b","p_369fb3fa0a52","p_20fcfaee54db","p_d0836805480c","p_dfa05062e666","p_1aef6ca86fed","p_81ee2e308293","p_afddda70bf2a","p_e160b9779559","p_0089b1e1b3ac","p_d7dcbc23c517","p_3b2e5ee89bb1","p_bba939e365d3","p_c9a32ae58615","p_7360c9f39278","p_8826a9b59fc8","p_28c073f2189c","p_72dda1766089","p_08df2c453f47","p_4c10983e75af","p_446221dbee34","p_9c97847f17c2","p_13160d4e4fe1","p_07771204e785","p_77af7080809c","p_3b016a4412d3","p_707f3440a974","p_b582cf766ced","p_3e996fde3031","p_08e5dd93df1d","p_8210097ba4d7","p_5d78a60fb09b","p_b656992ab8c0","p_840f968b9bc5","p_0435c5ce9762","p_1b829237153b","p_37eaa83fc633","p_954e7c52c096","p_80c6dd7541b3","p_6564a0f8d6f3","p_b6557aa19a0f","p_bb022bf6e491","p_6fca4aeecbc8","p_83bc8feef87c","p_9a6ef85efc02","p_84cefe43dee4","p_dd204173abb6","p_5dc693ac9320","p_c64c6f3bf3e5","p_4d1b54127ee8","p_9a488f96406b","p_5b19bea6d49d","p_4ffad3b5cb9b","p_4a95eb39ed9d","p_c62050b0c0f6","p_57316556a9d7","p_2db534699747","p_60b4e1c4ce36","p_16fd15760920","p_768d8f49da46","p_2e9cbf708da0","p_7e0c1f1d336a","p_5b2059141a61","p_e520ab47331c","p_434a9ff40d42","p_46f39acda6a1","p_fdaa105cbc64","p_c28187554e4a","p_65d5bb73c4af","p_bacfb678f67e","p_af6bcb31e600","p_83886b7a2d24","p_5ee2844cf023","p_4a6f370f5b80","p_6dc7d4992db4","p_8f57e624cc9f","p_24967870fae4","p_5a63ed3cbe24","p_16c1d0a011ff","p_6f521de325f0"] };
+
+// Vista previa de una actualización masiva de precios: nada se cambia hasta tocar "Aplicar".
+function PriceUpdateModal({ parsed, products, costs, costDefaults, onClose, onApply }) {
+  const ROUND_STEPS = [0.01, 0.05, 0.1, 0.25, 0.5, 1];
+  const r0 = (parsed && parsed.rounding) || {};
+  const [rounding, setRounding] = useState({ step: ROUND_STEPS.includes(Number(r0.step)) ? Number(r0.step) : 0.01, mode: r0.mode === "up" ? "up" : "nearest" });
+  const plan = useMemo(() => planPriceUpdates(parsed, products, costs, costDefaults, rounding), [parsed, products, costs, costDefaults, rounding]);
+  const [busy, setBusy] = useState(false);
+  const [backedUp, setBackedUp] = useState(false);
+  const items = plan.items;
+  const changed = items.filter((it) => it.changed);
+  const up = changed.filter((it) => it.newPrice > it.oldPrice).length;
+  const down = changed.length - up;
+  const avg = changed.length ? changed.reduce((t, it) => t + (it.oldPrice > 0 ? (it.newPrice - it.oldPrice) / it.oldPrice : 0), 0) / changed.length : 0;
+  const backup = () => {
+    downloadJSON(`respaldo_precios_${new Date().toISOString().slice(0, 10)}.json`, { prices: Object.fromEntries(items.map((it) => [it.id, it.oldPrice])) });
+    setBackedUp(true);
+  };
+  const apply = async () => {
+    if (!backedUp && !window.confirm("No descargaste el respaldo de los precios actuales (con él puedes volver atrás). ¿Aplicar de todos modos?")) return;
+    setBusy(true);
+    const r = await onApply(items);
+    setBusy(false);
+    window.alert(r.failed ? `Se actualizaron ${r.ok} precios y ${r.failed} ${r.failed === 1 ? "falló" : "fallaron"}. Revisa tu conexión y vuelve a intentarlo.` : `Listo: ${r.ok} precios actualizados.`);
+    if (!r.failed) onClose();
+  };
+  const title = plan.mode === "prices" ? "Aplicar / restaurar precios" : `Actualizar precios: costo × ${plan.multiplier}`;
+  const th = { padding: "6px 8px", textAlign: "right", color: "#9a9994", fontWeight: 600, position: "sticky", top: 0, background: "#1a1a1c", whiteSpace: "nowrap" };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#141415", border: "1px solid #2a2a2e", borderRadius: 16, padding: 20, width: "min(760px,100%)", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div className="disp" style={{ fontSize: 15, fontWeight: 700 }}>{title}</div>
+          <button onClick={onClose} aria-label="Cerrar" style={{ background: "none", border: "none", color: "#9a9994" }}><X size={18} /></button>
+        </div>
+        <div style={{ fontSize: 12.5, color: "#d6d4ce", lineHeight: 1.6, marginBottom: 10 }}>
+          <b>{changed.length}</b> precio{changed.length === 1 ? "" : "s"} cambia{changed.length === 1 ? "" : "n"}
+          {changed.length > 0 && <> (<span style={{ color: "#3fae6a" }}>{up} suben</span> · <span style={{ color: "#e2736b" }}>{down} bajan</span> · cambio promedio {avg >= 0 ? "+" : ""}{(avg * 100).toFixed(1)}%)</>}
+          {items.length - changed.length > 0 && <> · {items.length - changed.length} ya tienen ese precio</>}.
+          <br />Todavía no se ha cambiado nada: revisa la lista y toca “Aplicar”.
+        </div>
+        {plan.mode === "multiplier" && (
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", marginBottom: 10, fontSize: 12, color: "#c9c8c3" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>Redondear a
+              <select value={String(rounding.step)} onChange={(e) => setRounding((r) => ({ ...r, step: Number(e.target.value) }))} aria-label="Redondear a"
+                style={{ background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "6px 8px", color: "#e4e2dc", fontSize: 12 }}>
+                <option value="0.01">Centavos (sin redondeo extra)</option>
+                <option value="0.05">$0.05</option>
+                <option value="0.1">$0.10</option>
+                <option value="0.25">$0.25</option>
+                <option value="0.5">$0.50</option>
+                <option value="1">$1.00</option>
+              </select>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>Hacia
+              <select value={rounding.mode} onChange={(e) => setRounding((r) => ({ ...r, mode: e.target.value }))} aria-label="Dirección del redondeo"
+                style={{ background: "#17171a", border: "1px solid #2a2a2e", borderRadius: 8, padding: "6px 8px", color: "#e4e2dc", fontSize: 12 }}>
+                <option value="nearest">El número más cercano</option>
+                <option value="up">Arriba (nunca baja del costo × {plan.multiplier})</option>
+              </select>
+            </label>
+          </div>
+        )}
+        {plan.noCost.length > 0 && (
+          <div style={{ fontSize: 11.5, color: "#e8d9a8", background: "#241f12", border: "1px solid #5a4a1e", borderRadius: 8, padding: "7px 10px", marginBottom: 8 }}>
+            {plan.noCost.length} producto{plan.noCost.length === 1 ? "" : "s"} sin costo cargado, no se tocan: {plan.noCost.slice(0, 8).map((x) => x.code).join(", ")}{plan.noCost.length > 8 ? "…" : ""}
+          </div>
+        )}
+        {plan.unknown.length > 0 && (
+          <div style={{ fontSize: 11.5, color: "#9a9994", marginBottom: 8 }}>{plan.unknown.length} id{plan.unknown.length === 1 ? "" : "s"} del archivo no existe{plan.unknown.length === 1 ? "" : "n"} en el catálogo y se ignora{plan.unknown.length === 1 ? "" : "n"}.</div>
+        )}
+        <div className="m164-scrollbar" style={{ maxHeight: 300, overflowY: "auto", border: "1px solid #232326", borderRadius: 8, marginBottom: 12 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+            <thead>
+              <tr><th style={{ ...th, textAlign: "left" }}>Producto</th><th style={th}>Costo</th><th style={th}>Antes</th><th style={th}>Después</th><th style={th}>Cambio</th></tr>
+            </thead>
+            <tbody>
+              {changed.map((it) => {
+                const d = it.oldPrice > 0 ? (it.newPrice - it.oldPrice) / it.oldPrice : null;
+                return (
+                  <tr key={it.id} style={{ borderTop: "1px solid #1d1d20" }}>
+                    <td style={{ padding: "5px 8px", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it.name}>
+                      <b style={{ color: "#e2823c" }}>{it.code}</b> <span style={{ color: "#b5b3ad" }}>{it.name}{it.color && String(it.color).toUpperCase() !== "NA" ? ` · ${it.color}` : ""}</span>
+                    </td>
+                    <td style={{ padding: "5px 8px", textAlign: "right", color: "#9a9994" }}>{it.cost === null ? "—" : money(it.cost)}</td>
+                    <td style={{ padding: "5px 8px", textAlign: "right" }}>{money(it.oldPrice)}</td>
+                    <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>{money(it.newPrice)}</td>
+                    <td style={{ padding: "5px 8px", textAlign: "right", color: d === null ? "#9a9994" : d < 0 ? "#e2736b" : "#3fae6a" }}>{d === null ? "—" : `${d > 0 ? "+" : ""}${(d * 100).toFixed(0)}%`}</td>
+                  </tr>
+                );
+              })}
+              {changed.length === 0 && <tr><td colSpan={5} style={{ padding: "18px 8px", textAlign: "center", color: "#7a7974" }}>No hay precios que cambiar.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={backup} style={{ flex: "1 1 220px", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "#1a1a1c", border: backedUp ? "1px solid #3fae6a" : "1px solid #2c2c30", color: backedUp ? "#3fae6a" : "#f3f1ec", borderRadius: 8, padding: "10px", fontSize: 12.5, fontWeight: 600 }}>
+            <Download size={14} /> {backedUp ? "Respaldo descargado" : "Descargar respaldo de precios actuales"}
+          </button>
+          <button onClick={onClose} style={{ flex: "0 1 110px", background: "transparent", border: "1px solid #2a2a2e", color: "#9a9994", borderRadius: 8, padding: "10px", fontSize: 13 }}>Cancelar</button>
+          <button onClick={apply} disabled={busy || changed.length === 0} style={{ flex: "1 1 160px", background: busy || changed.length === 0 ? "#3a3a3e" : "#e2823c", border: "none", color: busy || changed.length === 0 ? "#7a7974" : "#0c0c0d", fontWeight: 700, borderRadius: 8, padding: "10px", fontSize: 13 }}>
+            {busy ? "Aplicando..." : `Aplicar ${changed.length} precio${changed.length === 1 ? "" : "s"}`}
+          </button>
+        </div>
+        <div style={{ fontSize: 10.5, color: "#7a7974", marginTop: 8, lineHeight: 1.4 }}>Para volver atrás, carga el archivo de respaldo con este mismo botón: restaura los precios que tenías.</div>
+      </div>
+    </div>
+  );
+}
+
+function AdminProductos({ products, setAddedProducts, overrides, setOverrides, costs = {}, saveCosts = async () => false, costDefaults = {}, appliedPlans = {}, markPlan = async () => false }) {
   const [query, setQuery] = useState("");
   const [photoTarget, setPhotoTarget] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [priceJob, setPriceJob] = useState(null);
+  const [priceJobId, setPriceJobId] = useState(null); // id del ajuste incluido en la app (null si vino de un archivo)
+  const priceFileRef = useRef(null);
+  // Aviso del ajuste incluido: solo si no se aplicó/descartó y todavía hay precios que cambiarían.
+  const builtinPlan = useMemo(() => planPriceUpdates(BUILTIN_PRICE_PLAN, products, costs, costDefaults), [products, costs, costDefaults]);
+  const builtinChanged = (builtinPlan.items || []).filter((it) => it.changed);
+  const showBuiltin = !appliedPlans[BUILTIN_PRICE_PLAN.id] && builtinChanged.length > 0;
+  const loadPriceFile = async (files) => {
+    const f = files && files[0];
+    if (!f) return;
+    try {
+      const parsed = JSON.parse(await f.text());
+      const plan = planPriceUpdates(parsed, products, costs, costDefaults);
+      if (plan.error) { window.alert(plan.error); return; }
+      setPriceJobId(null);
+      setPriceJob(parsed);
+    } catch (e) {
+      window.alert("No pude leer el archivo. Debe ser el .json de precios.");
+    }
+  };
+  // Escribe primero en Firebase y solo refleja en pantalla los que se guardaron bien.
+  const applyPrices = async (items) => {
+    const entries = items.filter((it) => it.changed).map((it) => [it.id, it.newPrice]);
+    const results = await Promise.all(entries.map(([id, price]) => fbMergeDoc("overrides", id, { price })));
+    const okIds = new Set(entries.filter((_, i) => results[i]).map(([id]) => id));
+    setOverrides((prev) => {
+      const next = { ...prev };
+      entries.forEach(([id, price]) => { if (okIds.has(id)) next[id] = { ...(next[id] || {}), price }; });
+      return next;
+    });
+    const failed = entries.length - okIds.size;
+    if (priceJobId && failed === 0) await markPlan(priceJobId, "aplicado"); // el aviso desaparece
+    return { ok: okIds.size, failed };
+  };
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
   const [viewMode, setViewMode] = useState("activos");
@@ -2821,6 +2977,21 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides, c
 
   return (
     <div>
+      {showBuiltin && (
+        <div style={{ marginBottom: 14, padding: "12px 14px", borderRadius: 12, border: "1px solid #e2823c", background: "rgba(226,130,60,0.10)" }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: "#e2823c", marginBottom: 4 }}>Ajuste de precios listo para aplicar</div>
+          <div style={{ fontSize: 12.5, color: "#e4e2dc", lineHeight: 1.55 }}>
+            {BUILTIN_PRICE_PLAN.label} en <b>{builtinChanged.length}</b> ruedas (<span style={{ color: "#3fae6a" }}>{builtinChanged.filter((it) => it.newPrice > it.oldPrice).length} suben</span> · <span style={{ color: "#e2736b" }}>{builtinChanged.filter((it) => it.newPrice < it.oldPrice).length} bajan</span>).
+            No toca buffers, ejes, mono, bearing ni M118/M119. Antes de aplicar ves la lista completa, puedes descargar un respaldo y elegir otro redondeo.
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={() => { setPriceJobId(BUILTIN_PRICE_PLAN.id); setPriceJob(BUILTIN_PRICE_PLAN); }}
+              style={{ background: "#e2823c", border: "none", color: "#0c0c0d", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "8px 14px" }}>Revisar y aplicar</button>
+            <button onClick={() => { if (window.confirm("¿Descartar este ajuste? El aviso no volverá a aparecer (igual podrás usar el archivo .json si lo necesitas).")) markPlan(BUILTIN_PRICE_PLAN.id, "descartado"); }}
+              style={{ background: "none", border: "none", color: "#9a9994", fontSize: 12.5, textDecoration: "underline" }}>Descartar</button>
+          </div>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
           <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#7a7974" }} />
@@ -2843,6 +3014,10 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides, c
         <button onClick={() => setShowImport(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600 }}>
           <FileSpreadsheet size={14} /> Importar Excel
         </button>
+        <button onClick={() => priceFileRef.current.click()} title="Cambiar muchos precios a la vez con un archivo .json (con vista previa y respaldo)" style={{ display: "flex", alignItems: "center", gap: 6, background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "8px 12px", fontSize: 12.5 }}>
+          <Upload size={14} /> Actualizar precios (.json)
+        </button>
+        <input ref={priceFileRef} type="file" accept=".json,application/json" style={{ display: "none" }} onChange={(e) => { loadPriceFile(e.target.files); e.target.value = ""; }} />
         <button onClick={exportNuevos} style={{ display: "flex", alignItems: "center", gap: 6, background: "#1a1a1c", border: "1px solid #2c2c30", color: "#f3f1ec", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600 }}>
           <Download size={14} /> Exportar nuevos
         </button>
@@ -3017,6 +3192,7 @@ function AdminProductos({ products, setAddedProducts, overrides, setOverrides, c
             setDuplicateTarget(null);
           }} />
       )}
+      {priceJob && <PriceUpdateModal parsed={priceJob} products={products} costs={costs} costDefaults={costDefaults} onClose={() => setPriceJob(null)} onApply={applyPrices} />}
       {showImport && (
         <ImportExcelModal onClose={() => setShowImport(false)} existingProducts={products}
           onImport={(importedRows, sec) => {
@@ -3059,6 +3235,54 @@ function costWithDefault(costs, costDefaults, id, section) {
   if (d === undefined || d === null || d === "" || isNaN(Number(d)) || Number(d) < 0) return { cost: null, isDefault: false };
   return { cost: Number(d), isDefault: true };
 }
+// Redondeo a centavos (mitad hacia arriba): 2.725 → 2.73
+const round2 = (x) => Math.round(x * 100 + 1e-6) / 100;
+// Redondea a múltiplos de `step` (ej. 0.05 → 2.725 pasa a 2.75; 0.50 → 2.73 pasa a 2.50). mode: "nearest" (mitad hacia arriba) o "up".
+function roundToStep(x, step = 0.01, mode = "nearest") {
+  const k = Math.round(1 / (step > 0 ? step : 0.01));
+  const scaled = x * k;
+  const r = mode === "up" ? Math.ceil(scaled - 1e-7) : Math.round(scaled + 1e-7);
+  return Math.round((r / k) * 100) / 100;
+}
+// Prepara una actualización masiva de precios SIN aplicarla. Acepta dos formatos de archivo:
+//   { "multiplier": 2.5, "ids": [...] }  → precio nuevo = costo actual × multiplicador (con los costos cargados hoy)
+//   { "prices": { "idProducto": precio } } → precios exactos (es el formato del respaldo, sirve para volver atrás)
+function planPriceUpdates(parsed, products, costs, costDefaults, roundingArg) {
+  const rin = roundingArg || (parsed && parsed.rounding) || {};
+  const rounding = { step: Number(rin.step) > 0 ? Number(rin.step) : 0.01, mode: rin.mode === "up" ? "up" : "nearest" };
+  const byId = new Map((products || []).map((x) => [x.id, x]));
+  const items = [], noCost = [], unknown = [];
+  const seen = new Set();
+  const push = (pr, newPrice, cost) => {
+    items.push({ id: pr.id, code: pr.code, name: pr.name, color: pr.color, cost, oldPrice: Number(pr.price) || 0, newPrice, changed: Math.abs(newPrice - (Number(pr.price) || 0)) > 0.004 });
+  };
+  let mode = null, multiplier = null;
+  if (parsed && parsed.prices && typeof parsed.prices === "object" && !Array.isArray(parsed.prices)) {
+    mode = "prices";
+    Object.entries(parsed.prices).forEach(([id, v]) => {
+      const pr = byId.get(id);
+      if (!pr) { unknown.push(id); return; }
+      const n = Number(v);
+      if (v === null || v === "" || !isFinite(n) || n < 0) return;
+      push(pr, round2(n), costWithDefault(costs, costDefaults, id, sectionOf(pr)).cost);
+    });
+  } else if (parsed && Array.isArray(parsed.ids) && Number(parsed.multiplier) > 0) {
+    mode = "multiplier"; multiplier = Number(parsed.multiplier);
+    parsed.ids.forEach((id) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      const pr = byId.get(id);
+      if (!pr) { unknown.push(id); return; }
+      const cost = costWithDefault(costs, costDefaults, id, sectionOf(pr)).cost;
+      if (cost === null) { noCost.push(pr); return; }
+      push(pr, roundToStep(cost * multiplier, rounding.step, rounding.mode), cost);
+    });
+  } else {
+    return { error: "No reconozco el archivo. Debe ser el .json de precios (con \"multiplier\" e \"ids\", o con \"prices\")." };
+  }
+  return { mode, multiplier, rounding, items, noCost, unknown };
+}
+
 // Fechas como "número de día" (sin horas), para que el selector no dependa de husos horarios ni de horario de verano.
 const DAY_MS = 86400000;
 function dayIdxOf(ts) { const d = new Date(ts); return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY_MS); }
@@ -3939,7 +4163,7 @@ function AdminAjustes({ settings, setSettings, clientes, setClientes, orders, se
 
 /* ---------------- Admin shell ---------------- */
 
-function AdminView({ setView, orders, setOrders, clientes, setClientes, products, setAddedProducts, overrides, setOverrides, settings, setSettings, logo, wishlists, setWishlists, onLogout, liveConnected, ordersError, costs, saveCosts, costDefaults, saveCostDefaults }) {
+function AdminView({ setView, orders, setOrders, clientes, setClientes, products, setAddedProducts, overrides, setOverrides, settings, setSettings, logo, wishlists, setWishlists, onLogout, liveConnected, ordersError, costs, saveCosts, costDefaults, saveCostDefaults, appliedPlans, markPlan }) {
   const [tab, setTab] = useState("pedidos");
   const [slow, setSlow] = useState(false);
   useEffect(() => {
@@ -3988,7 +4212,7 @@ function AdminView({ setView, orders, setOrders, clientes, setClientes, products
           </div>
         )}
         {tab === "pedidos" && <AdminPedidos orders={orders} setOrders={setOrders} clientes={clientes} setClientes={setClientes} overrides={overrides} setOverrides={setOverrides} products={products} />}
-        {tab === "productos" && <AdminProductos products={products} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides} costs={costs} saveCosts={saveCosts} costDefaults={costDefaults} />}
+        {tab === "productos" && <AdminProductos products={products} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides} costs={costs} saveCosts={saveCosts} costDefaults={costDefaults} appliedPlans={appliedPlans} markPlan={markPlan} />}
         {tab === "reporte" && <AdminReporte orders={orders} products={products} costs={costs} saveCosts={saveCosts} costDefaults={costDefaults} saveCostDefaults={saveCostDefaults} />}
         {tab === "wishlist" && <AdminWishlist wishlists={wishlists} setWishlists={setWishlists} />}
         {tab === "ajustes" && <AdminAjustes settings={settings} setSettings={setSettings} clientes={clientes} setClientes={setClientes} orders={orders} setOrders={setOrders} />}
@@ -4118,6 +4342,7 @@ function App() {
   const [wishlists, setWishlists] = useState([]);
   const [costs, setCosts] = useState({}); // costo por unidad (con envío) de cada producto: privado, solo admin
   const [costDefaults, setCostDefaults] = useState({}); // costo promedio por categoría (ej. { figuras: 0.8 }): privado, solo admin
+  const [appliedPlans, setAppliedPlans] = useState({}); // ajustes de precios ya aplicados o descartados: { idAjuste: { at, status } }
   const [liveConnected, setLiveConnected] = useState(false);
   const [ordersError, setOrdersError] = useState(null);
 
@@ -4243,7 +4468,7 @@ function App() {
 
   // Carga PRIVADA: lista de clientes y favoritos de todos los clientes. Solo con sesión de admin.
   useEffect(() => {
-    if (!isAdmin) { setClientes([]); setWishlists([]); setCosts({}); setCostDefaults({}); return; }
+    if (!isAdmin) { setClientes([]); setWishlists([]); setCosts({}); setCostDefaults({}); setAppliedPlans({}); return; }
     let cancelled = false;
     (async () => {
       const [clientesDoc, wishlistsMap, costsDoc] = await Promise.all([
@@ -4256,6 +4481,7 @@ function App() {
       setWishlists(Object.values(wishlistsMap));
       setCosts(costsDoc.map || {});
       setCostDefaults(costsDoc.defaults || {});
+      setAppliedPlans(costsDoc.applied || {});
     })();
     return () => { cancelled = true; };
   }, [isAdmin]);
@@ -4270,6 +4496,13 @@ function App() {
   const saveCostDefaults = async (patch) => {
     const ok = await fbMergeDoc("meta", "costs", { defaults: patch });
     if (ok) setCostDefaults((prev) => ({ ...prev, ...patch }));
+    return ok;
+  };
+
+  const markPlan = async (planId, status) => {
+    const entry = { at: Date.now(), status };
+    const ok = await fbMergeDoc("meta", "costs", { applied: { [planId]: entry } });
+    if (ok) setAppliedPlans((prev) => ({ ...prev, [planId]: entry }));
     return ok;
   };
 
@@ -4449,7 +4682,7 @@ function App() {
           products={allProducts} setAddedProducts={setAddedProducts} overrides={overrides} setOverrides={setOverrides}
           settings={settings} setSettings={setSettings} logo={settings.logo} wishlists={wishlists} setWishlists={setWishlists}
           onLogout={() => { signOut(auth); setView("client"); }} liveConnected={liveConnected} ordersError={ordersError}
-          costs={costs} saveCosts={saveCosts} costDefaults={costDefaults} saveCostDefaults={saveCostDefaults} />
+          costs={costs} saveCosts={saveCosts} costDefaults={costDefaults} saveCostDefaults={saveCostDefaults} appliedPlans={appliedPlans} markPlan={markPlan} />
       )}
       {showGate && (
         <AdminGate onCancel={() => setShowGate(false)} onSuccess={() => { setView("admin"); setShowGate(false); }} />
